@@ -585,10 +585,8 @@ with tab_approved:
     else:
         praise_live_items = [item for item in live_items if item["type"] == "Praise" and item["status"] == "Live"]
 
-        render_widget_section(active_brand_page_id)
-
-        if not praise_live_items:
-            st.caption("Approve at least one praise item to populate the widget.")
+        if praise_live_items:
+            render_widget_section(active_brand_page_id)
 
         st.divider()
         st.caption(f"{len(live_items)} item(s) approved and live")
