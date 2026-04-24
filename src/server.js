@@ -284,6 +284,24 @@ function notionNumber(props, ...keys) {
   return null;
 }
 
+function notionTitle(props, ...keys) {
+  for (const key of keys) {
+    const arr = props?.[key]?.title || [];
+    const value = arr[0]?.text?.content;
+    if (value) return value;
+  }
+  return "";
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function shellEscape(value) {
   return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
 }
@@ -380,6 +398,258 @@ async function syncPulseItemToNotion(item, type, brandPageId) {
     },
   });
   return created.id;
+}
+
+async function fetchLivePraiseItems(brandId) {
+  const pulseDbId = process.env.NOTION_PULSE_DB_ID?.trim();
+  if (!pulseDbId) throw new Error("Missing NOTION_PULSE_DB_ID");
+
+  const results = await notionPost(`databases/${pulseDbId}/query`, {
+    filter: {
+      and: [
+        {
+          property: "Brand Registry",
+          relation: { contains: brandId },
+        },
+        {
+          property: "Type",
+          select: { equals: "Praise" },
+        },
+        {
+          property: "Status",
+          select: { equals: "Live" },
+        },
+      ],
+    },
+    page_size: 50,
+  });
+
+  return (results.results || []).map((page) => {
+    const props = page.properties || {};
+    return {
+      page_id: page.id,
+      content: notionTitle(props, "Content") || notionText(props, "Content"),
+      author: notionText(props, "Author"),
+      rating: notionNumber(props, "Review Rating", "Rating") ?? 5,
+      review_text: notionText(props, "Original Review", "Review Text"),
+    };
+  }).filter((item) => item.content);
+}
+
+function renderWidgetDocument(brandId, items) {
+  const safeBrandId = escapeHtml(brandId);
+  const serializedItems = JSON.stringify(items)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Brand Pulse Widget</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5f7fb;
+        --card: rgba(255, 255, 255, 0.92);
+        --text: #111827;
+        --muted: #6b7280;
+        --gold: #f4b400;
+        --dot: #d1d5db;
+        --dot-active: #111827;
+        --shadow: 0 18px 45px rgba(15, 23, 42, 0.12);
+        --border: rgba(148, 163, 184, 0.2);
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        background:
+          radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 35%),
+          linear-gradient(180deg, #f8fafc 0%, var(--bg) 100%);
+        font-family: "Inter", system-ui, sans-serif;
+        color: var(--text);
+      }
+      body {
+        padding: 18px;
+      }
+      .shell {
+        width: 100%;
+        max-width: 680px;
+        margin: 0 auto;
+      }
+      .card {
+        background: var(--card);
+        backdrop-filter: blur(8px);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        padding: 24px;
+        box-shadow: var(--shadow);
+        min-height: 196px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        opacity: 0;
+        transform: translateY(8px);
+        transition: opacity 420ms ease, transform 420ms ease;
+      }
+      .card.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #2563eb;
+        margin-bottom: 14px;
+      }
+      .quote {
+        font-size: clamp(22px, 4vw, 30px);
+        line-height: 1.28;
+        font-weight: 700;
+        margin: 0 0 18px;
+      }
+      .meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .author {
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .context {
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .stars {
+        color: var(--gold);
+        font-size: 18px;
+        letter-spacing: 0.08em;
+        white-space: nowrap;
+      }
+      .dots {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 18px;
+      }
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        background: var(--dot);
+        transition: transform 220ms ease, background-color 220ms ease;
+      }
+      .dot.active {
+        background: var(--dot-active);
+        transform: scale(1.15);
+      }
+      .empty {
+        text-align: center;
+        padding: 42px 24px;
+      }
+      .empty h1 {
+        margin: 0 0 8px;
+        font-size: 22px;
+      }
+      .empty p {
+        margin: 0;
+        color: var(--muted);
+      }
+      @media (max-width: 560px) {
+        body { padding: 12px; }
+        .card { padding: 20px; border-radius: 20px; min-height: 180px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section id="card" class="card${items.length ? " visible" : ""}">
+        ${items.length ? `
+          <div>
+            <div class="eyebrow">Brand Pulse Highlight</div>
+            <h1 id="quote" class="quote"></h1>
+          </div>
+          <div class="meta">
+            <div>
+              <div id="author" class="author"></div>
+              <div id="context" class="context"></div>
+            </div>
+            <div id="stars" class="stars" aria-label="5 star review"></div>
+          </div>
+        ` : `
+          <div class="empty">
+            <h1>No live praise yet</h1>
+            <p>Approve a praise item to make this widget go live.</p>
+          </div>
+        `}
+      </section>
+      ${items.length ? `<div id="dots" class="dots" aria-label="Review rotation indicators"></div>` : ""}
+    </main>
+    <script>
+      const items = ${serializedItems};
+      const brandId = "${safeBrandId}";
+      let activeIndex = 0;
+      const card = document.getElementById("card");
+      const quote = document.getElementById("quote");
+      const author = document.getElementById("author");
+      const context = document.getElementById("context");
+      const stars = document.getElementById("stars");
+      const dots = document.getElementById("dots");
+
+      function starString(rating) {
+        const count = Math.max(0, Math.min(Number(rating) || 5, 5));
+        return "★".repeat(count) + "☆".repeat(5 - count);
+      }
+
+      function renderDots() {
+        if (!dots) return;
+        dots.innerHTML = items.map((_, index) =>
+          '<span class="dot' + (index === activeIndex ? ' active' : '') + '"></span>'
+        ).join("");
+      }
+
+      function renderItem(index) {
+        if (!items.length || !quote || !author || !context || !stars) return;
+        const item = items[index];
+        card.classList.remove("visible");
+        window.setTimeout(() => {
+          quote.textContent = item.content;
+          author.textContent = item.author || "Verified customer";
+          context.textContent = item.review_text || ("Live social proof for " + brandId);
+          stars.textContent = starString(item.rating);
+          renderDots();
+          card.classList.add("visible");
+        }, 180);
+      }
+
+      if (items.length > 0) {
+        renderItem(activeIndex);
+        if (items.length > 1) {
+          window.setInterval(() => {
+            activeIndex = (activeIndex + 1) % items.length;
+            renderItem(activeIndex);
+          }, 5000);
+        }
+      }
+    </script>
+  </body>
+</html>`;
 }
 
 async function runPulseAuditJob(jobId, placeId, placeName) {
@@ -1937,6 +2207,21 @@ app.post("/api/pulse-dispatch", express.json(), async (req, res) => {
   } catch (error) {
     log.error("pulse-dispatch", error.message);
     return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.get("/widget/:brandId", async (req, res) => {
+  try {
+    const items = await fetchLivePraiseItems(req.params.brandId);
+    res.removeHeader("X-Frame-Options");
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com data:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline'; frame-ancestors *;",
+    );
+    res.type("html").send(renderWidgetDocument(req.params.brandId, items));
+  } catch (error) {
+    log.error("widget", error.message);
+    res.status(500).type("html").send(`<!doctype html><html><body><p>${escapeHtml(error.message)}</p></body></html>`);
   }
 });
 

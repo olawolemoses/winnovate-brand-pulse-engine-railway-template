@@ -6,10 +6,13 @@ Streamlit UI for:
 - Triggering pulse audits via the OpenClaw agent webhook
 - Viewing pending praise/friction items from Notion
 - Approving items to move them Live and send to Trello
+- Generating iframe marketing widgets for live praise
 """
 
 import os
+import json
 import streamlit as st
+import streamlit.components.v1 as components
 import httpx
 from utils import (
     search_places,
@@ -57,6 +60,62 @@ def get_dispatch_target_url():
     if not audit_url:
         return ""
     return audit_url.rsplit("/api/pulse-audit", 1)[0] + "/api/pulse-dispatch"
+
+
+def get_public_base_url():
+    audit_url = get_audit_target_url()
+    if audit_url and "/api/pulse-audit" in audit_url:
+        return audit_url.rsplit("/api/pulse-audit", 1)[0].rstrip("/")
+    return os.getenv("RAILWAY_PUBLIC_URL", "").rstrip("/")
+
+
+def get_widget_url(brand_id: str):
+    base_url = get_public_base_url()
+    if not base_url or not brand_id:
+        return ""
+    return f"{base_url}/widget/{brand_id}"
+
+
+def build_iframe_snippet(brand_id: str):
+    widget_url = get_widget_url(brand_id)
+    if not widget_url:
+        return ""
+    return (
+        f'<iframe src="{widget_url}" width="100%" height="260" '
+        'style="border:0;overflow:hidden;" loading="lazy" '
+        'referrerpolicy="no-referrer-when-downgrade"></iframe>'
+    )
+
+
+def render_codepen_button(brand_id: str):
+    iframe_snippet = build_iframe_snippet(brand_id)
+    if not iframe_snippet:
+        st.caption("Set `RAILWAY_PUBLIC_URL` or `OPENCLAW_WEBHOOK_URL` to generate a widget preview.")
+        return
+
+    codepen_payload = json.dumps(
+        {
+            "title": "Winnovate Pulse Widget Preview",
+            "html": iframe_snippet,
+            "css": "body{margin:0;padding:24px;background:#f5f7fb;font-family:Inter,system-ui,sans-serif;}",
+        }
+    )
+    form_html = f"""
+    <form action="https://codepen.io/pen/define" method="POST" target="_blank">
+      <input type="hidden" name="data" value='{codepen_payload.replace("&", "&amp;").replace("'", "&#39;")}' />
+      <button type="submit" style="
+        width:100%;
+        padding:0.7rem 1rem;
+        border:none;
+        border-radius:0.8rem;
+        background:#111827;
+        color:#ffffff;
+        font:600 14px Inter, system-ui, sans-serif;
+        cursor:pointer;
+      ">Open Widget in CodePen</button>
+    </form>
+    """
+    components.html(form_html, height=56)
 
 
 def fetch_audit_job(job_id: str):
@@ -396,6 +455,21 @@ with tab_approved:
     elif not live_items:
         st.info("No approved items for this brand yet.")
     else:
+        praise_live_items = [item for item in live_items if item["type"] == "Praise" and item["status"] == "Live"]
+        iframe_snippet = build_iframe_snippet(active_brand_page_id)
+
+        st.markdown("### Marketing Widget")
+        if iframe_snippet:
+            st.caption("Embed this iframe anywhere to display live praise with encapsulated styling.")
+            st.code(iframe_snippet, language="html")
+            render_codepen_button(active_brand_page_id)
+        else:
+            st.info("Widget URL unavailable. Set the public Railway URL env var first.")
+
+        if not praise_live_items:
+            st.caption("Approve at least one praise item to populate the widget.")
+
+        st.divider()
         st.caption(f"{len(live_items)} item(s) approved and live")
 
         for item in live_items[:20]:  # show latest 20
