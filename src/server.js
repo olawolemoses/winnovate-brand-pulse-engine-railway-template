@@ -251,6 +251,93 @@ async function notionPatch(path, body) {
   return r.json();
 }
 
+async function notionGet(path) {
+  const token = getNotionAuth();
+  const r = await fetch(`https://api.notion.com/v1/${path}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Notion-Version": "2022-06-28",
+      "Content-Type": "application/json",
+    },
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    throw new Error(`Notion API error ${r.status}: ${text}`);
+  }
+  return r.json();
+}
+
+function notionText(props, ...keys) {
+  for (const key of keys) {
+    const arr = props?.[key]?.rich_text || props?.[key]?.title || [];
+    const value = arr[0]?.text?.content;
+    if (value) return value;
+  }
+  return "";
+}
+
+function notionNumber(props, ...keys) {
+  for (const key of keys) {
+    const value = props?.[key]?.number;
+    if (typeof value === "number") return value;
+  }
+  return null;
+}
+
+function shellEscape(value) {
+  return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
+}
+
+async function buildDispatchItem({ itemId, brandId, content, type }) {
+  const [brandPage, pulsePage] = await Promise.all([
+    notionGet(`pages/${brandId}`),
+    notionGet(`pages/${itemId}`),
+  ]);
+
+  return {
+    item_id: itemId,
+    brand_id: brandId,
+    place_name: notionText(brandPage.properties, "Name"),
+    content,
+    type,
+    author: notionText(pulsePage.properties, "Author"),
+    rating: notionNumber(pulsePage.properties, "Review Rating", "Rating"),
+    review_text: notionText(pulsePage.properties, "Original Review", "Review Text"),
+  };
+}
+
+async function runActionDispatcher(item) {
+  const dispatcherPath = path.join(WORKSPACE_DIR, "tools", "action_dispatcher.js");
+  const cmd = `node ${shellEscape(dispatcherPath)} --item ${shellEscape(JSON.stringify(item))}`;
+  return await new Promise((resolve) => {
+    childProcess.exec(
+      cmd,
+      {
+        cwd: WORKSPACE_DIR,
+        env: {
+          ...process.env,
+          OPENCLAW_STATE_DIR: STATE_DIR,
+          OPENCLAW_WORKSPACE_DIR: WORKSPACE_DIR,
+        },
+        timeout: 30_000,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          resolve({
+            code: error.code ?? 1,
+            output: `${stdout || ""}${stderr || ""}`.trim(),
+          });
+          return;
+        }
+        resolve({
+          code: 0,
+          output: `${stdout || ""}${stderr || ""}`.trim(),
+        });
+      },
+    );
+  });
+}
+
 async function upsertBrandInPipeline(placeId, name) {
   const brandDbId = process.env.NOTION_BRAND_DB_ID?.trim();
   if (!brandDbId) throw new Error("Missing NOTION_BRAND_DB_ID");
@@ -1790,6 +1877,67 @@ app.get("/api/pulse-audit/:jobId", (req, res) => {
     return res.status(404).json({ ok: false, error: "job not found" });
   }
   return res.json({ ok: true, job });
+});
+
+app.post("/api/pulse-dispatch", express.json(), async (req, res) => {
+  const { item_id, brand_id, content, type } = req.body || {};
+
+  if (!item_id || !brand_id || !content || !type) {
+    return res.status(400).json({
+      ok: false,
+      error: "item_id, brand_id, content, and type are required",
+    });
+  }
+
+  if (!["Praise", "Friction"].includes(type)) {
+    return res.status(400).json({ ok: false, error: "type must be Praise or Friction" });
+  }
+
+  try {
+    const item = await buildDispatchItem({
+      itemId: item_id,
+      brandId: brand_id,
+      content,
+      type,
+    });
+    const dispatch = await runActionDispatcher(item);
+    if (dispatch.code !== 0) {
+      return res.status(502).json({
+        ok: false,
+        error: dispatch.output || "Dispatcher failed",
+      });
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(dispatch.output);
+    } catch (error) {
+      return res.status(502).json({
+        ok: false,
+        error: `Dispatcher returned invalid JSON: ${dispatch.output}`,
+      });
+    }
+
+    if (!payload.ok) {
+      return res.status(502).json({
+        ok: false,
+        error: payload.error || "Dispatcher reported failure",
+      });
+    }
+
+    return res.json({
+      ok: true,
+      item_id,
+      brand_id,
+      type,
+      status: type === "Friction" ? "Sent to Trello" : "Live",
+      dispatch: payload,
+      toast: type === "Friction" ? "🚀 Trello Card Created!" : "✨ Live on Widget!",
+    });
+  } catch (error) {
+    log.error("pulse-dispatch", error.message);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
 // ── Clear pulse audit SQLite jobs ──

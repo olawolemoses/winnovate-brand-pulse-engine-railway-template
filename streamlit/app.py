@@ -15,7 +15,6 @@ from utils import (
     search_places,
     fetch_all_brands,
     fetch_pulse_items,
-    update_pulse_status,
 )
 
 st.set_page_config(
@@ -51,6 +50,13 @@ def get_audit_target_url():
         if railway_url:
             target_url = railway_url.rstrip("/") + "/api/pulse-audit"
     return target_url
+
+
+def get_dispatch_target_url():
+    audit_url = get_audit_target_url()
+    if not audit_url:
+        return ""
+    return audit_url.rsplit("/api/pulse-audit", 1)[0] + "/api/pulse-dispatch"
 
 
 def fetch_audit_job(job_id: str):
@@ -340,8 +346,27 @@ with tab_pending:
                 with cols[2]:
                     if st.button("✅ Approve", key=f"approve_{item['page_id']}"):
                         with st.spinner("Approving..."):
-                            update_pulse_status(item["page_id"], "Live")
-                            st.success("Approved! Now Live.")
+                            resp = httpx.post(
+                                get_dispatch_target_url(),
+                                json={
+                                    "item_id": item["page_id"],
+                                    "brand_id": item["brand_relation"],
+                                    "content": item["content"],
+                                    "type": item["type"],
+                                },
+                                timeout=30,
+                            )
+                            if resp.is_success:
+                                payload = resp.json()
+                                st.toast(payload.get("toast", "Approved"))
+                            else:
+                                error_message = "Dispatch failed"
+                                try:
+                                    error_message = resp.json().get("error", error_message)
+                                except Exception:
+                                    pass
+                                st.error(error_message)
+                                st.stop()
                             st.rerun()
 
 # ── Tab 3: Live Items ──
@@ -358,7 +383,7 @@ with tab_approved:
     if active_brand_page_id:
         with st.spinner("Loading approved pulse items..."):
             live_items = fetch_pulse_items(
-                status_filter="Live",
+                status_filter=["Live", "Sent to Trello"],
                 page_size=100,
                 brand_page_id=active_brand_page_id,
             )

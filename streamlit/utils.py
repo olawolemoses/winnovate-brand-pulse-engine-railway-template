@@ -135,7 +135,7 @@ def fetch_all_brands():
     return brands
 
 
-def fetch_pulse_items(status_filter: str = "Pending", page_size: int = 50, brand_page_id: str | None = None):
+def fetch_pulse_items(status_filter="Pending", page_size: int = 50, brand_page_id: str | None = None):
     """Fetch pulse items, optionally filtered by status."""
     notion = get_notion()
     db_id = get_pulse_db_id()
@@ -161,7 +161,11 @@ def fetch_pulse_items(status_filter: str = "Pending", page_size: int = 50, brand
             "brand_relation": _relation_id(props, ["Brand Registry", "Brand"]),
         })
     if status_filter:
-        items = [item for item in items if item["status"] == status_filter]
+        if isinstance(status_filter, (list, tuple, set)):
+            allowed_statuses = set(status_filter)
+            items = [item for item in items if item["status"] in allowed_statuses]
+        else:
+            items = [item for item in items if item["status"] == status_filter]
     if brand_page_id:
         items = [item for item in items if item["brand_relation"] == brand_page_id]
     return sorted(items, key=lambda item: item["content"], reverse=True)
