@@ -546,31 +546,23 @@ with tab_approved:
 # ── Tab 4: Trello Board ──
 with tab_trello:
     st.subheader("📋 Brand Pulse Trello Board")
-    st.caption("Friction items sent to Trello appear here as cards.")
+    st.caption("Friction items dispatched from this dashboard appear as Trello cards.")
 
     trello_board_url = "https://trello.com/b/ldQuJBhF/brand-pulse-demo-board"
-    components.html(
-        f"""
-        <div style="
-            width:100%;
-            height:calc(100vh - 240px);
-            min-height:500px;
-            border-radius:18px;
-            overflow:hidden;
-            border:1px solid rgba(148,163,184,0.25);
-            background:#fafbfc;
-        ">
-            <iframe
-                src="{trello_board_url}"
-                width="100%"
-                height="100%"
-                loading="lazy"
-                style="border:0;"
-                referrerpolicy="no-referrer-when-downgrade"
-                allowfullscreen
-            ></iframe>
-        </div>
-        """,
-        height=800,
+
+    col_left, col_right = st.columns([1, 2])
+    with col_left:
+        st.link_button("🔗 Open Trello Board", trello_board_url, type="primary", use_container_width=True)
+        st.caption("Trello blocks embedding in iframes — opens in a new tab.")
+    with col_right:
+        st.info(
+            "**Tip:** Pin this tab next to the dashboard for a quick overview. "
+            "Cards created here use the **Brand Pulse Demo Board** list."
+        )
+
+    st.divider()
+    st.markdown("**Recent activity** — check Trello for the latest card placement.")
+    st.caption(
+        "Friction items → Sent to Trello → show up as cards in your board. "
+        "Each card includes: review text, author, rating, and a link back to the Notion page."
     )
-    st.caption(f"🔗 [Open board in new tab]({trello_board_url})")
