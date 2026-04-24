@@ -13,6 +13,61 @@
 - Optional **Web Terminal** at `/tui` for browser-based TUI access
 - Persistent state via **Railway Volume** (so config/credentials/memory survive redeploys)
 
+## 🏆 Winnovate Brand Pulse Engine
+
+A **4-phase brand health monitoring pipeline** that runs on OpenClaw. Built for the OpenClaw Hackathon.
+
+### How It Works
+
+1. **Fetch** — Pulls the last 7 days of Google Places reviews via API
+2. **Categorize** — AI classifies each review as *Praise* (for marketing) or *Friction* (for ops), extracts punchy quotes and actionable Trello items
+3. **Upsert Brand** — Registers or updates the brand in a Notion Brand Registry (relational database)
+4. **Sync Pulse Items** — Writes all categorized items to a Pulse Actions database with `Pending` status (founder must approve before going Live)
+
+### Quick Demo
+
+```
+Run a pulse audit for Hard Rock Cafe Lagos
+```
+
+The agent will:
+1. Fetch 7-day reviews from Google Places
+2. Categorize into praise/friction with enriched content
+3. Upsert the brand in Notion Brand Registry
+4. Sync items to the Pulse Actions database
+5. Report: "Staged X praise items and Y friction alerts in the Pulse Console."
+
+### Architecture
+
+```
+workspace/
+├── skills/
+│   ├── brand_pulse.md          ← Main orchestrator skill
+│   ├── fetch_brand_pulse.md    ← Phase 1: Fetch reviews
+│   ├── brand_pulse_categorizer.md ← Phase 2: Categorize & enrich
+│   ├── sync_to_notion.md       ← Phase 3: Persist to Notion
+│   └── execute_actions.md      ← Phase 4: Dispatch approved items
+└── tools/
+    ├── google_places_tool.js   ← Google Places API wrapper
+    ├── notion_sync.js          ← Brand upsert + pulse sync
+    └── action_dispatcher.js    ← Final-mile dispatcher (Notion + Trello)
+```
+
+### Requirements
+
+| Env Variable | Purpose |
+|---|---|
+| `NOTION_TOKEN` | Notion API integration token |
+| `NOTION_BRAND_DB_ID` | Brand Registry database ID |
+| `NOTION_PULSE_DB_ID` | Pulse Actions database ID |
+| `Maps_API_KEY` | Google Places API key |
+
+### Human-in-the-Loop
+
+All pulse items land in **Pending** status. Nothing goes live without founder approval. Once approved, use the Execute Actions skill to dispatch to Notion (Live) and Trello.
+
+---
+
 ## How it works (high level)
 
 - The container runs a wrapper web server.
