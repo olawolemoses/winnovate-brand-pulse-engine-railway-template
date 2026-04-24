@@ -1,12 +1,15 @@
 """Shared utilities for the Winnovate Brand Pulse dashboard."""
 
 import os
+import logging
 import googlemaps
 from notion_client import Client as NotionClient
+from notion_client.errors import APIResponseError
 
 # --- Clients (lazy init) ---
 _gmaps = None
 _notion = None
+logger = logging.getLogger(__name__)
 
 
 def get_gmaps():
@@ -47,17 +50,30 @@ def search_places(query: str, max_results: int = 6):
 
 # --- Notion ---
 def get_brand_db_id():
-    return os.getenv("NOTION_BRAND_DB_ID", "")
+    value = os.getenv("NOTION_BRAND_DB_ID", "")
+    logger.warning("NOTION_BRAND_DB_ID raw env value: %s", value)
+    return value
 
 
 def get_pulse_db_id():
-    return os.getenv("NOTION_PULSE_DB_ID", "")
+    value = os.getenv("NOTION_PULSE_DB_ID", "")
+    logger.warning("NOTION_PULSE_DB_ID raw env value: %s", value)
+    return value
 
 
 def _query_notion_collection(notion, collection_id: str, **kwargs):
     """Query a Notion data source on newer SDKs, or a database on older ones."""
     if hasattr(notion, "data_sources") and hasattr(notion.data_sources, "query"):
-        return notion.data_sources.query(data_source_id=collection_id, **kwargs)
+        try:
+            return notion.data_sources.query(data_source_id=collection_id, **kwargs)
+        except APIResponseError as error:
+            logger.warning(
+                "data_sources.query failed for %s with code=%s; retrying as database",
+                collection_id,
+                getattr(error, "code", "unknown"),
+            )
+            if getattr(error, "status", None) != 404:
+                raise
     if hasattr(notion, "databases") and hasattr(notion.databases, "query"):
         return notion.databases.query(database_id=collection_id, **kwargs)
     raise RuntimeError("The installed notion-client does not support query operations.")
