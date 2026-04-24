@@ -68,6 +68,8 @@ const log = {
   error: (category, message) => writeLog("ERROR", category, message),
 };
 
+log.info("init", `Syncing workspace from /app to ${WORKSPACE_DIR}`);
+
 function resolveGatewayToken() {
   const envTok = process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
   if (envTok) return envTok;
