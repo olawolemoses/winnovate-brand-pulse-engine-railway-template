@@ -9,7 +9,6 @@ Streamlit UI for:
 """
 
 import os
-import json
 import streamlit as st
 import httpx
 from utils import (
@@ -41,6 +40,27 @@ if "selected_brand_page_id" not in st.session_state:
     st.session_state["selected_brand_page_id"] = None
 if "search_results" not in st.session_state:
     st.session_state["search_results"] = []
+if "active_audit_job" not in st.session_state:
+    st.session_state["active_audit_job"] = None
+
+
+def get_audit_target_url():
+    target_url = os.getenv("OPENCLAW_WEBHOOK_URL", "")
+    if not target_url:
+        railway_url = os.getenv("RAILWAY_PUBLIC_URL", "")
+        if railway_url:
+            target_url = railway_url.rstrip("/") + "/api/pulse-audit"
+    return target_url
+
+
+def fetch_audit_job(job_id: str):
+    target_url = get_audit_target_url()
+    if not target_url:
+        return None
+    status_url = target_url.rstrip("/") + f"/{job_id}"
+    response = httpx.get(status_url, timeout=15)
+    response.raise_for_status()
+    return response.json().get("job")
 
 # ── Styling ──
 st.markdown(
@@ -131,6 +151,56 @@ tab_new, tab_pending, tab_approved = st.tabs(
 with tab_new:
     st.subheader("Run a New Brand Pulse Audit")
 
+    @st.fragment(run_every="2s")
+    def render_audit_status():
+        active_job = st.session_state.get("active_audit_job")
+        if not active_job:
+            return
+        try:
+            job = fetch_audit_job(active_job["job_id"])
+        except Exception as exc:
+            st.warning(f"Could not refresh audit status: {exc}")
+            return
+        if not job:
+            return
+
+        should_refresh_page = False
+        if job.get("brand_page_id") and job.get("brand_page_id") != active_job.get("brand_page_id"):
+            should_refresh_page = True
+        st.session_state["active_audit_job"] = job
+        if job.get("brand_page_id"):
+            st.session_state["selected_brand_page_id"] = job["brand_page_id"]
+        if job.get("status") in {"completed", "failed", "timed_out"} and job.get("status") != active_job.get("status"):
+            should_refresh_page = True
+
+        status_state = "running"
+        if job["status"] == "completed":
+            status_state = "complete"
+        elif job["status"] in {"failed", "timed_out"}:
+            status_state = "error"
+
+        with st.status(
+            f"Audit status: {job['current_stage'].replace('_', ' ').title()}",
+            state=status_state,
+            expanded=True,
+        ):
+            st.progress(max(0, min(int(job.get("progress", 0)), 100)))
+            st.caption(
+                f"Job `{job['job_id']}` for **{job['place_name']}** is `{job['status']}`."
+            )
+            if job.get("summary"):
+                st.write(job["summary"])
+            if job.get("error"):
+                st.error(job["error"])
+            events = job.get("events") or []
+            if events:
+                for event in events[-5:]:
+                    st.caption(f"{event['created_at']} · {event['message']}")
+        if should_refresh_page:
+            st.rerun()
+
+    render_audit_status()
+
     col1, col2 = st.columns([3, 1])
     with col1:
         place_query = st.text_input(
@@ -177,11 +247,7 @@ with tab_new:
         )
 
         if st.button("🚀 Run Pulse Audit Now", type="primary"):
-            target_url = os.getenv("OPENCLAW_WEBHOOK_URL", "")
-            if not target_url:
-                railway_url = os.getenv("RAILWAY_PUBLIC_URL", "")
-                if railway_url:
-                    target_url = railway_url.rstrip("/") + "/api/pulse-audit"
+            target_url = get_audit_target_url()
 
             if target_url:
                 with st.spinner("Triggering audit pipeline..."):
@@ -195,9 +261,18 @@ with tab_new:
                             timeout=30,
                         )
                         if resp.is_success:
+                            payload = resp.json()
+                            st.session_state["active_audit_job"] = {
+                                "job_id": payload.get("job_id"),
+                                "place_id": place_id,
+                                "place_name": place_name,
+                                "status": payload.get("status", "queued"),
+                                "current_stage": payload.get("status", "queued"),
+                                "progress": 0,
+                                "events": [],
+                            }
                             st.success(
-                                f"✅ Pulse audit triggered for **{place_name}**!\n\n"
-                                "Check the Pending Review tab in a moment."
+                                f"✅ Pulse audit triggered for **{place_name}**."
                             )
                         else:
                             st.error(

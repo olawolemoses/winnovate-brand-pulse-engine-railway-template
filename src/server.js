@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import express from "express";
 import httpProxy from "http-proxy";
@@ -69,6 +70,298 @@ const log = {
 };
 
 log.info("init", `Syncing workspace from /app to ${WORKSPACE_DIR}`);
+
+fs.mkdirSync(STATE_DIR, { recursive: true });
+const PULSE_JOBS_DB_PATH = path.join(STATE_DIR, "pulse_jobs.db");
+const pulseJobsDb = new DatabaseSync(PULSE_JOBS_DB_PATH);
+pulseJobsDb.exec(`
+  CREATE TABLE IF NOT EXISTS pulse_jobs (
+    job_id TEXT PRIMARY KEY,
+    place_id TEXT NOT NULL,
+    place_name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    current_stage TEXT NOT NULL,
+    progress INTEGER NOT NULL DEFAULT 0,
+    summary TEXT,
+    error TEXT,
+    brand_page_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS pulse_job_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    message TEXT NOT NULL,
+    progress INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+`);
+
+const insertPulseJobStmt = pulseJobsDb.prepare(`
+  INSERT INTO pulse_jobs (
+    job_id, place_id, place_name, status, current_stage, progress,
+    summary, error, brand_page_id, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+const updatePulseJobStmt = pulseJobsDb.prepare(`
+  UPDATE pulse_jobs
+  SET status = ?, current_stage = ?, progress = ?, summary = ?, error = ?, brand_page_id = ?, updated_at = ?
+  WHERE job_id = ?
+`);
+const getPulseJobStmt = pulseJobsDb.prepare(`
+  SELECT * FROM pulse_jobs WHERE job_id = ?
+`);
+const listPulseJobEventsStmt = pulseJobsDb.prepare(`
+  SELECT stage, message, progress, created_at
+  FROM pulse_job_events
+  WHERE job_id = ?
+  ORDER BY id ASC
+`);
+const insertPulseJobEventStmt = pulseJobsDb.prepare(`
+  INSERT INTO pulse_job_events (job_id, stage, message, progress, created_at)
+  VALUES (?, ?, ?, ?, ?)
+`);
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function createPulseJob(placeId, placeName) {
+  const timestamp = nowIso();
+  const jobId = `pulse_${crypto.randomUUID()}`;
+  insertPulseJobStmt.run(
+    jobId,
+    placeId,
+    placeName,
+    "queued",
+    "queued",
+    0,
+    null,
+    null,
+    null,
+    timestamp,
+    timestamp,
+  );
+  insertPulseJobEventStmt.run(
+    jobId,
+    "queued",
+    `Queued pulse audit for ${placeName}.`,
+    0,
+    timestamp,
+  );
+  return jobId;
+}
+
+function updatePulseJob(jobId, updates) {
+  const current = getPulseJobStmt.get(jobId);
+  if (!current) return null;
+  const next = {
+    status: updates.status ?? current.status,
+    current_stage: updates.current_stage ?? current.current_stage,
+    progress: updates.progress ?? current.progress,
+    summary: updates.summary ?? current.summary,
+    error: updates.error ?? current.error,
+    brand_page_id: updates.brand_page_id ?? current.brand_page_id,
+    updated_at: nowIso(),
+  };
+  updatePulseJobStmt.run(
+    next.status,
+    next.current_stage,
+    next.progress,
+    next.summary,
+    next.error,
+    next.brand_page_id,
+    next.updated_at,
+    jobId,
+  );
+  if (updates.event_message) {
+    insertPulseJobEventStmt.run(
+      jobId,
+      next.current_stage,
+      updates.event_message,
+      next.progress,
+      next.updated_at,
+    );
+  }
+  return getPulseJob(jobId);
+}
+
+function getPulseJob(jobId) {
+  const row = getPulseJobStmt.get(jobId);
+  if (!row) return null;
+  return {
+    job_id: row.job_id,
+    place_id: row.place_id,
+    place_name: row.place_name,
+    status: row.status,
+    current_stage: row.current_stage,
+    progress: row.progress,
+    summary: row.summary,
+    error: row.error,
+    brand_page_id: row.brand_page_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    events: listPulseJobEventsStmt.all(jobId),
+  };
+}
+
+function getNotionHeaders() {
+  const token = process.env.NOTION_TOKEN?.trim();
+  if (!token) {
+    throw new Error("Missing NOTION_TOKEN environment variable.");
+  }
+  return {
+    Authorization: `Bearer ${token}`,
+    "Notion-Version": "2022-06-28",
+    "Content-Type": "application/json",
+  };
+}
+
+async function queryNotionDatabase(databaseId, payload = {}) {
+  const response = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
+    method: "POST",
+    headers: getNotionHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Notion query failed for ${databaseId}: ${response.status} ${body}`);
+  }
+  return response.json();
+}
+
+function notionRichTextValue(props, key) {
+  const arr = props?.[key]?.rich_text || props?.[key]?.title || [];
+  return arr[0]?.text?.content || "";
+}
+
+async function findBrandByPlaceId(placeId) {
+  const databaseId = process.env.NOTION_BRAND_DB_ID?.trim();
+  if (!databaseId) return null;
+  const results = await queryNotionDatabase(databaseId, {
+    filter: {
+      property: "Place ID",
+      rich_text: { equals: placeId },
+    },
+    page_size: 1,
+  });
+  const page = results.results?.[0];
+  if (!page) return null;
+  return {
+    page_id: page.id,
+    place_id: notionRichTextValue(page.properties, "Place ID"),
+    place_name: notionRichTextValue(page.properties, "Name"),
+  };
+}
+
+async function countPulseItemsForBrand(brandPageId) {
+  const databaseId = process.env.NOTION_PULSE_DB_ID?.trim();
+  if (!databaseId) return 0;
+  const results = await queryNotionDatabase(databaseId, { page_size: 100 });
+  return (results.results || []).filter((page) => {
+    const relation = page.properties?.Brand?.relation || page.properties?.["Brand Registry"]?.relation || [];
+    return relation.some((item) => item.id === brandPageId);
+  }).length;
+}
+
+async function waitForPulseSync(jobId, placeId) {
+  const timeoutMs = 180000;
+  const intervalMs = 5000;
+  const startedAt = Date.now();
+
+  updatePulseJob(jobId, {
+    status: "running",
+    current_stage: "awaiting_sync",
+    progress: 55,
+    event_message: "Audit dispatched. Waiting for Notion sync.",
+  });
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const brand = await findBrandByPlaceId(placeId);
+    if (brand) {
+      updatePulseJob(jobId, {
+        status: "running",
+        current_stage: "checking_items",
+        progress: 75,
+        brand_page_id: brand.page_id,
+        event_message: `Brand registry entry found for ${brand.place_name || placeId}.`,
+      });
+
+      const itemCount = await countPulseItemsForBrand(brand.page_id);
+      if (itemCount > 0) {
+        updatePulseJob(jobId, {
+          status: "completed",
+          current_stage: "completed",
+          progress: 100,
+          brand_page_id: brand.page_id,
+          summary: `Audit synced ${itemCount} item(s) for ${brand.place_name || placeId}.`,
+          event_message: `Completed with ${itemCount} synced item(s).`,
+        });
+        return;
+      }
+    }
+    await sleep(intervalMs);
+  }
+
+  updatePulseJob(jobId, {
+    status: "timed_out",
+    current_stage: "awaiting_sync",
+    progress: 90,
+    error: "Audit was dispatched but no synced Notion items were observed before timeout.",
+    event_message: "Timed out waiting for Notion sync.",
+  });
+}
+
+async function runPulseAuditJob(jobId, placeId, placeName) {
+  try {
+    updatePulseJob(jobId, {
+      status: "running",
+      current_stage: "dispatching",
+      progress: 10,
+      event_message: `Dispatching pulse audit for ${placeName}.`,
+    });
+
+    const msg = `Run a pulse audit for ${placeName} (PlaceId: ${placeId})`;
+    const gwRes = await fetch(`${GATEWAY_TARGET}/api/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENCLAW_GATEWAY_TOKEN}`,
+      },
+      body: JSON.stringify({
+        text: msg,
+        source: "streamlit-dashboard",
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!gwRes.ok) {
+      const body = await gwRes.text().catch(() => "");
+      throw new Error(`Gateway rejected the request: ${gwRes.status} ${body}`);
+    }
+
+    updatePulseJob(jobId, {
+      status: "running",
+      current_stage: "dispatched",
+      progress: 35,
+      event_message: "Audit request accepted by OpenClaw gateway.",
+    });
+    log.info("pulse-audit", `triggered audit for ${placeName} (${placeId}) job=${jobId}`);
+
+    await waitForPulseSync(jobId, placeId);
+  } catch (err) {
+    log.error("pulse-audit", `job ${jobId} failed: ${err.message}`);
+    updatePulseJob(jobId, {
+      status: "failed",
+      current_stage: "failed",
+      progress: 100,
+      error: err.message,
+      event_message: `Audit failed: ${err.message}`,
+    });
+  }
+}
 
 function resolveGatewayToken() {
   const envTok = process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
@@ -1413,8 +1706,9 @@ proxy.on("proxyReqWs", (proxyReq, req, socket, options, head) => {
 });
 
 // ── Brand Pulse Webhook ──
-// Accepts POST /api/pulse-audit from the Streamlit dashboard
-// Forwards the audit request to the OpenClaw agent via its HTTP API
+// Accepts POST /api/pulse-audit from the Streamlit dashboard.
+// Creates a persisted job record, dispatches the audit to OpenClaw,
+// and exposes GET /api/pulse-audit/:jobId for polling.
 app.post("/api/pulse-audit", express.json(), async (req, res) => {
   const { place_id, place_name } = req.body || {};
 
@@ -1427,31 +1721,14 @@ app.post("/api/pulse-audit", express.json(), async (req, res) => {
   }
 
   try {
-    // POST a message to the OpenClaw agent via the internal gateway API
-    const msg = `Run a pulse audit for ${place_name} (PlaceId: ${place_id})`;
-    const gwRes = await fetch(`${GATEWAY_TARGET}/api/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENCLAW_GATEWAY_TOKEN}`,
-      },
-      body: JSON.stringify({
-        text: msg,
-        source: "streamlit-dashboard",
-      }),
-      signal: AbortSignal.timeout(10000),
+    const jobId = createPulseJob(place_id, place_name);
+    runPulseAuditJob(jobId, place_id, place_name).catch((err) => {
+      log.error("pulse-audit", `job ${jobId} async failure: ${err.message}`);
     });
-
-    if (!gwRes.ok) {
-      const body = await gwRes.text().catch(() => "");
-      log.error("pulse-audit", `gateway returned ${gwRes.status}: ${body}`);
-      return res.status(502).json({ ok: false, error: "Gateway rejected the request" });
-    }
-
-    log.info("pulse-audit", `triggered audit for ${place_name} (${place_id})`);
     return res.json({
       ok: true,
-      message: msg,
+      job_id: jobId,
+      status: "queued",
       place_id,
       place_name,
     });
@@ -1459,6 +1736,14 @@ app.post("/api/pulse-audit", express.json(), async (req, res) => {
     log.error("pulse-audit", `failed: ${err.message}`);
     return res.status(500).json({ ok: false, error: err.message });
   }
+});
+
+app.get("/api/pulse-audit/:jobId", (req, res) => {
+  const job = getPulseJob(req.params.jobId);
+  if (!job) {
+    return res.status(404).json({ ok: false, error: "job not found" });
+  }
+  return res.json({ ok: true, job });
 });
 
 app.use(async (req, res) => {
