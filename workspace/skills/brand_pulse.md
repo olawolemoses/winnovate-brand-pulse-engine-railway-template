@@ -20,10 +20,14 @@ Take a single business name or Google Place ID and run the complete 4-phase bran
 Follow this exact sequence. Never deviate.
 
 ### Phase 1: Fetch Reviews
-- Tool: `node workspace/tools/google_places_tool.js <PLACE_ID> --max-results 5`
+- Tool: `node workspace/tools/google_places_tool.js <PLACE_ID> --max-results 5 --fallback`
+- Always use `--fallback` to handle brands with no 7-day review activity gracefully
 - If you only have a business name, look up the Place ID first (search the web or check memory)
 - Parse the JSON output
 - If `ok` is false, stop and report the error to the user
+- Check the `mode` field in the output:
+  - `recent_7d` → reviews are fresh, good signal
+  - `fallback_all` → include the `fallback_note` in your report so the user knows these aren't recent
 
 ### Phase 2: Categorize & Enrich
 - Read through every review from Phase 1

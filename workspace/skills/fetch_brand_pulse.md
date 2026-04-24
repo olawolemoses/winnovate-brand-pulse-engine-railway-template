@@ -12,7 +12,10 @@ Use `workspace/tools/google_places_tool.js` to collect only the last 7 days of G
 ## Invocation
 ```bash
 node workspace/tools/google_places_tool.js <PLACE_ID> --max-results 5
+node workspace/tools/google_places_tool.js <PLACE_ID> --max-results 5 --fallback
 ```
+
+Use the `--fallback` flag when 7-day window is empty — it returns the most recent reviews regardless of date, up to `--max-results`.
 
 ## Output Contract
 The tool prints compact JSON for LLM ingestion.

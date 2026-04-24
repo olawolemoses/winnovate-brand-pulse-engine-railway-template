@@ -124,16 +124,16 @@ function buildPulsePagePayload(item, type, brandPageId) {
     Status: {
       select: { name: "Pending" },
     },
-    Brand: {
+    "Brand Registry": {
       relation: [{ id: brandPageId }],
     },
-    Rating: {
+    "Review Rating": {
       number: typeof item.rating === "number" ? item.rating : null,
     },
     Author: {
       rich_text: item.author ? [{ text: { content: String(item.author).slice(0, 2000) } }] : [],
     },
-    "Review Text": {
+    "Original Review": {
       rich_text: item.text ? [{ text: { content: String(item.text).slice(0, 2000) } }] : [],
     },
   };

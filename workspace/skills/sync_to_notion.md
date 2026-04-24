@@ -55,10 +55,10 @@ Pulse Actions database:
 - `Content`: generated `punchy_quote` or `trello_action_item`
 - `Type`: `Praise` or `Friction`
 - `Status`: always `Pending`
-- `Brand`: relation to the Brand Registry page
-- `Rating`: numeric rating from review
+- `Brand Registry`: relation to the Brand Registry page
+- `Review Rating`: numeric rating from review
 - `Author`: review author
-- `Review Text`: original review text
+- `Original Review`: original review text
 
 ## Invocation
 ```bash
