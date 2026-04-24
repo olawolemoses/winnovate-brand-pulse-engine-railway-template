@@ -58,15 +58,11 @@ def search_places(query: str, max_results: int = 6):
 
 # --- Notion ---
 def get_brand_db_id():
-    value = os.getenv("NOTION_BRAND_DB_ID", "")
-    logger.warning("NOTION_BRAND_DB_ID raw env value: %s", value)
-    return value
+    return os.getenv("NOTION_BRAND_DB_ID", "")
 
 
 def get_pulse_db_id():
-    value = os.getenv("NOTION_PULSE_DB_ID", "")
-    logger.warning("NOTION_PULSE_DB_ID raw env value: %s", value)
-    return value
+    return os.getenv("NOTION_PULSE_DB_ID", "")
 
 
 def _query_notion_collection(notion, collection_id: str, **kwargs):
