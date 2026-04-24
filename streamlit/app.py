@@ -271,8 +271,8 @@ st.title("📊 Brand Pulse Console")
 st.caption("Monitor brand health, review customer sentiment, and dispatch actions.")
 
 # ── Tab 1: New Audit ──
-tab_new, tab_pending, tab_approved = st.tabs(
-    ["🔍 New Pulse Audit", "⏳ Pending Review", "✅ Approved / Live"]
+tab_new, tab_pending, tab_approved, tab_trello = st.tabs(
+    ["🔍 New Pulse Audit", "⏳ Pending Review", "✅ Approved / Live", "📋 Trello Board"]
 )
 
 with tab_new:
@@ -542,3 +542,35 @@ with tab_approved:
                         f"<span class='{badge}'>{label}</span>",
                         unsafe_allow_html=True,
                     )
+
+# ── Tab 4: Trello Board ──
+with tab_trello:
+    st.subheader("📋 Brand Pulse Trello Board")
+    st.caption("Friction items sent to Trello appear here as cards.")
+
+    trello_board_url = "https://trello.com/b/ldQuJBhF/brand-pulse-demo-board"
+    components.html(
+        f"""
+        <div style="
+            width:100%;
+            height:calc(100vh - 240px);
+            min-height:500px;
+            border-radius:18px;
+            overflow:hidden;
+            border:1px solid rgba(148,163,184,0.25);
+            background:#fafbfc;
+        ">
+            <iframe
+                src="{trello_board_url}"
+                width="100%"
+                height="100%"
+                loading="lazy"
+                style="border:0;"
+                referrerpolicy="no-referrer-when-downgrade"
+                allowfullscreen
+            ></iframe>
+        </div>
+        """,
+        height=800,
+    )
+    st.caption(f"🔗 [Open board in new tab]({trello_board_url})")
