@@ -90,7 +90,7 @@ with st.sidebar:
     st.subheader("Registered Brands")
     brands = fetch_all_brands()
     if brands:
-        brand_options = {"All brands": None}
+        brand_options = {"No brand selected": None}
         for brand in brands:
             label = brand["name"] or brand["place_id"] or brand["page_id"]
             brand_options[label] = brand
@@ -99,7 +99,7 @@ with st.sidebar:
             (brand for brand in brands if brand["page_id"] == st.session_state.get("selected_brand_page_id")),
             None,
         )
-        default_label = current_brand["name"] if current_brand and current_brand["name"] in brand_options else "All brands"
+        default_label = current_brand["name"] if current_brand and current_brand["name"] in brand_options else "No brand selected"
         selected_brand_label = st.selectbox(
             "Active brand context",
             options=list(brand_options.keys()),
@@ -221,16 +221,23 @@ with tab_pending:
     if active_brand_name:
         st.caption(f"Viewing pending items for **{active_brand_name}**")
     else:
-        st.caption("Viewing pending items for all brands")
+        st.caption("Select a brand to view pending items")
 
-    with st.spinner("Loading pending pulse items..."):
-        pending_items = fetch_pulse_items(
-            status_filter="Pending",
-            brand_page_id=active_brand_page_id,
-        )
+    pending_items = []
+    if active_brand_page_id:
+        with st.spinner("Loading pending pulse items..."):
+            pending_items = fetch_pulse_items(
+                status_filter="Pending",
+                brand_page_id=active_brand_page_id,
+            )
 
-    if not pending_items:
-        st.info("No pending items. Run a new pulse audit!")
+    if not active_brand_page_id:
+        if active_brand_name:
+            st.info(f"No staged items are available for **{active_brand_name}** yet. Run an audit first.")
+        else:
+            st.info("Choose a registered brand or run a new audit to create one.")
+    elif not pending_items:
+        st.info("No pending items for this brand.")
     else:
         st.caption(f"{len(pending_items)} item(s) pending review")
 
@@ -270,17 +277,24 @@ with tab_approved:
     if active_brand_name:
         st.caption(f"Viewing approved items for **{active_brand_name}**")
     else:
-        st.caption("Viewing approved items for all brands")
+        st.caption("Select a brand to view approved items")
 
-    with st.spinner("Loading approved pulse items..."):
-        live_items = fetch_pulse_items(
-            status_filter="Live",
-            page_size=100,
-            brand_page_id=active_brand_page_id,
-        )
+    live_items = []
+    if active_brand_page_id:
+        with st.spinner("Loading approved pulse items..."):
+            live_items = fetch_pulse_items(
+                status_filter="Live",
+                page_size=100,
+                brand_page_id=active_brand_page_id,
+            )
 
-    if not live_items:
-        st.info("No approved items yet. Approve some pending items first!")
+    if not active_brand_page_id:
+        if active_brand_name:
+            st.info(f"No approved items are available for **{active_brand_name}** yet.")
+        else:
+            st.info("Choose a registered brand to view approved items.")
+    elif not live_items:
+        st.info("No approved items for this brand yet.")
     else:
         st.caption(f"{len(live_items)} item(s) approved and live")
 
