@@ -9,6 +9,7 @@ import express from "express";
 import httpProxy from "http-proxy";
 import pty from "node-pty";
 import { WebSocketServer } from "ws";
+import { Client as GoogleClient } from "@googlemaps/google-maps-services-js";
 
 const PORT = Number.parseInt(process.env.PORT ?? "8080", 10);
 const STATE_DIR =
@@ -207,150 +208,195 @@ function getPulseJob(jobId) {
   };
 }
 
-function getNotionHeaders() {
+// ── Inline Notion helpers (avoid importing CLI tools with side-effects) ──
+function getNotionAuth() {
   const token = process.env.NOTION_TOKEN?.trim();
-  if (!token) {
-    throw new Error("Missing NOTION_TOKEN environment variable.");
-  }
-  return {
-    Authorization: `Bearer ${token}`,
-    "Notion-Version": "2022-06-28",
-    "Content-Type": "application/json",
-  };
+  if (!token) throw new Error("Missing NOTION_TOKEN");
+  return token;
 }
 
-async function queryNotionDatabase(databaseId, payload = {}) {
-  const response = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
+async function notionPost(path, body) {
+  const token = getNotionAuth();
+  const r = await fetch(`https://api.notion.com/v1/${path}`, {
     method: "POST",
-    headers: getNotionHeaders(),
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Notion query failed for ${databaseId}: ${response.status} ${body}`);
-  }
-  return response.json();
-}
-
-function notionRichTextValue(props, key) {
-  const arr = props?.[key]?.rich_text || props?.[key]?.title || [];
-  return arr[0]?.text?.content || "";
-}
-
-async function findBrandByPlaceId(placeId) {
-  const databaseId = process.env.NOTION_BRAND_DB_ID?.trim();
-  if (!databaseId) return null;
-  const results = await queryNotionDatabase(databaseId, {
-    filter: {
-      property: "Place ID",
-      rich_text: { equals: placeId },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Notion-Version": "2022-06-28",
+      "Content-Type": "application/json",
     },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    throw new Error(`Notion API error ${r.status}: ${text}`);
+  }
+  return r.json();
+}
+
+async function notionPatch(path, body) {
+  const token = getNotionAuth();
+  const r = await fetch(`https://api.notion.com/v1/${path}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Notion-Version": "2022-06-28",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    throw new Error(`Notion API error ${r.status}: ${text}`);
+  }
+  return r.json();
+}
+
+async function upsertBrandInPipeline(placeId, name) {
+  const brandDbId = process.env.NOTION_BRAND_DB_ID?.trim();
+  if (!brandDbId) throw new Error("Missing NOTION_BRAND_DB_ID");
+
+  // Check if brand exists
+  const search = await notionPost(`databases/${brandDbId}/query`, {
+    filter: { property: "Place ID", rich_text: { equals: placeId } },
     page_size: 1,
   });
-  const page = results.results?.[0];
-  if (!page) return null;
-  return {
-    page_id: page.id,
-    place_id: notionRichTextValue(page.properties, "Place ID"),
-    place_name: notionRichTextValue(page.properties, "Name"),
-  };
+  if (search.results?.length > 0) return search.results[0].id;
+
+  // Create new brand
+  const created = await notionPost("pages", {
+    parent: { database_id: brandDbId },
+    properties: {
+      Name: { title: [{ text: { content: name } }] },
+      "Place ID": { rich_text: [{ text: { content: placeId } }] },
+    },
+  });
+  return created.id;
 }
 
-async function countPulseItemsForBrand(brandPageId) {
-  const databaseId = process.env.NOTION_PULSE_DB_ID?.trim();
-  if (!databaseId) return 0;
-  const results = await queryNotionDatabase(databaseId, { page_size: 100 });
-  return (results.results || []).filter((page) => {
-    const relation = page.properties?.Brand?.relation || page.properties?.["Brand Registry"]?.relation || [];
-    return relation.some((item) => item.id === brandPageId);
-  }).length;
-}
+async function syncPulseItemToNotion(item, type, brandPageId) {
+  const pulseDbId = process.env.NOTION_PULSE_DB_ID?.trim();
+  if (!pulseDbId) throw new Error("Missing NOTION_PULSE_DB_ID");
 
-async function waitForPulseSync(jobId, placeId) {
-  const timeoutMs = 180000;
-  const intervalMs = 5000;
-  const startedAt = Date.now();
+  const content = type === "Praise" ? (item.punchy_quote || item.text) : (item.trello_action_item || item.text);
+  if (!content) return null;
 
-  updatePulseJob(jobId, {
-    status: "running",
-    current_stage: "awaiting_sync",
-    progress: 55,
-    event_message: "Audit dispatched. Waiting for Notion sync.",
+  const created = await notionPost("pages", {
+    parent: { database_id: pulseDbId },
+    properties: {
+      Content: { title: [{ text: { content: String(content).slice(0, 2000) } }] },
+      Type: { select: { name: type } },
+      Status: { select: { name: "Pending" } },
+      "Brand Registry": { relation: [{ id: brandPageId }] },
+      "Review Rating": { number: typeof item.rating === "number" ? item.rating : null },
+      Author: { rich_text: item.author ? [{ text: { content: String(item.author).slice(0, 2000) } }] : [] },
+      "Original Review": { rich_text: item.text ? [{ text: { content: String(item.text).slice(0, 2000) } }] : [] },
+    },
   });
-
-  while (Date.now() - startedAt < timeoutMs) {
-    const brand = await findBrandByPlaceId(placeId);
-    if (brand) {
-      updatePulseJob(jobId, {
-        status: "running",
-        current_stage: "checking_items",
-        progress: 75,
-        brand_page_id: brand.page_id,
-        event_message: `Brand registry entry found for ${brand.place_name || placeId}.`,
-      });
-
-      const itemCount = await countPulseItemsForBrand(brand.page_id);
-      if (itemCount > 0) {
-        updatePulseJob(jobId, {
-          status: "completed",
-          current_stage: "completed",
-          progress: 100,
-          brand_page_id: brand.page_id,
-          summary: `Audit synced ${itemCount} item(s) for ${brand.place_name || placeId}.`,
-          event_message: `Completed with ${itemCount} synced item(s).`,
-        });
-        return;
-      }
-    }
-    await sleep(intervalMs);
-  }
-
-  updatePulseJob(jobId, {
-    status: "timed_out",
-    current_stage: "awaiting_sync",
-    progress: 90,
-    error: "Audit was dispatched but no synced Notion items were observed before timeout.",
-    event_message: "Timed out waiting for Notion sync.",
-  });
+  return created.id;
 }
 
 async function runPulseAuditJob(jobId, placeId, placeName) {
   try {
     updatePulseJob(jobId, {
       status: "running",
-      current_stage: "dispatching",
+      current_stage: "fetching_reviews",
       progress: 10,
-      event_message: `Dispatching pulse audit for ${placeName}.`,
+      event_message: `Fetching Google reviews for ${placeName}.`,
     });
 
-    const msg = `Run a pulse audit for ${placeName} (PlaceId: ${placeId})`;
-    const gwRes = await fetch(`${GATEWAY_TARGET}/api/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENCLAW_GATEWAY_TOKEN}`,
-      },
-      body: JSON.stringify({
-        text: msg,
-        source: "streamlit-dashboard",
-      }),
-      signal: AbortSignal.timeout(10000),
-    });
+    // ── Phase 1: Fetch reviews ──
+    const apiKey = process.env.Maps_API_KEY;
+    if (!apiKey) throw new Error("Missing Maps_API_KEY");
 
-    if (!gwRes.ok) {
-      const body = await gwRes.text().catch(() => "");
-      throw new Error(`Gateway rejected the request: ${gwRes.status} ${body}`);
+    const gmaps = new GoogleClient({});
+    const details = await gmaps.placeDetails({
+      params: { place_id: placeId, fields: ["name", "reviews"], key: apiKey },
+      timeout: 15000,
+    });
+    if (details.data.status !== "OK") {
+      throw new Error(`Google Places error: ${details.data.status}`);
     }
+    const place = details.data.result;
+    const rawReviews = Array.isArray(place.reviews) ? place.reviews : [];
+    const resolvedName = place.name || placeName;
+    log.info("pulse-audit", `fetched ${rawReviews.length} reviews for ${resolvedName}`);
 
     updatePulseJob(jobId, {
-      status: "running",
-      current_stage: "dispatched",
-      progress: 35,
-      event_message: "Audit request accepted by OpenClaw gateway.",
+      current_stage: "categorizing",
+      progress: 30,
+      event_message: `Found ${rawReviews.length} review(s). Categorizing.`,
     });
-    log.info("pulse-audit", `triggered audit for ${placeName} (${placeId}) job=${jobId}`);
 
-    await waitForPulseSync(jobId, placeId);
+    // ── Phase 2: Categorize ──
+    const sevenDaysAgo = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
+    const reviews = rawReviews.filter(r => r.time && r.time > sevenDaysAgo)
+      .map(r => ({ author: r.author_name || "", rating: r.rating ?? null, text: (r.text || "").trim(), relative_time: r.relative_time_description || "", timestamp: r.time }))
+      .sort((a, b) => b.timestamp - a.timestamp);
+
+    let mode = "recent_7d";
+    let toProcess = reviews;
+    if (reviews.length === 0 && rawReviews.length > 0) {
+      toProcess = rawReviews.map(r => ({ author: r.author_name || "", rating: r.rating ?? null, text: (r.text || "").trim(), relative_time: r.relative_time_description || "", timestamp: r.time }));
+      mode = "fallback_all";
+    }
+
+    const praise = [];
+    const friction = [];
+    for (const r of toProcess) {
+      if (!r.text) continue;
+      if (r.rating !== null && r.rating >= 4) {
+        const words = r.text.split(/\s+/).filter(Boolean);
+        praise.push({ ...r, punchy_quote: words.slice(0, 15).join(" ") + (words.length > 15 ? "…" : "") });
+      } else {
+        const actionItem = r.text.toLowerCase().includes("slow") || r.text.toLowerCase().includes("wait") ? "Reduce wait times" :
+          r.text.toLowerCase().includes("quality") || r.text.toLowerCase().includes("taste") ? "Review food quality standards" :
+          r.text.toLowerCase().includes("rude") || r.text.toLowerCase().includes("staff") ? "Retrain staff on service protocols" :
+          r.text.toLowerCase().includes("clean") || r.text.toLowerCase().includes("dirty") ? "Improve cleanliness standards" :
+          r.text.toLowerCase().includes("price") || r.text.toLowerCase().includes("expensive") ? "Review pricing strategy" :
+          `Address: ${r.text.slice(0, 80)}…`;
+        friction.push({ ...r, trello_action_item: actionItem });
+      }
+    }
+    log.info("pulse-audit", `categorized ${praise.length} praise, ${friction.length} friction`);
+
+    updatePulseJob(jobId, {
+      current_stage: "upserting_brand",
+      progress: 50,
+      event_message: `Upserting brand ${resolvedName} in Notion.`,
+    });
+
+    // ── Phase 3: Upsert brand ──
+    const brandPageId = await upsertBrandInPipeline(placeId, resolvedName);
+
+    updatePulseJob(jobId, {
+      current_stage: "syncing_items",
+      progress: 65,
+      brand_page_id: brandPageId,
+      event_message: `Syncing ${praise.length + friction.length} item(s).`,
+    });
+
+    // ── Phase 4: Sync items to Notion ──
+    let syncedCount = 0;
+    for (const p of praise) {
+      const id = await syncPulseItemToNotion(p, "Praise", brandPageId);
+      if (id) syncedCount++;
+    }
+    for (const f of friction) {
+      const id = await syncPulseItemToNotion(f, "Friction", brandPageId);
+      if (id) syncedCount++;
+    }
+
+    const summary = `Synced ${praise.length} praise + ${friction.length} friction for ${resolvedName}.`;
+    log.info("pulse-audit", `job ${jobId}: ${summary}`);
+
+    updatePulseJob(jobId, {
+      status: "completed",
+      current_stage: "completed",
+      progress: 100,
+      brand_page_id: brandPageId,
+      summary,
+      event_message: summary,
+    });
   } catch (err) {
     log.error("pulse-audit", `job ${jobId} failed: ${err.message}`);
     updatePulseJob(jobId, {
@@ -358,7 +404,7 @@ async function runPulseAuditJob(jobId, placeId, placeName) {
       current_stage: "failed",
       progress: 100,
       error: err.message,
-      event_message: `Audit failed: ${err.message}`,
+      event_message: `Failed: ${err.message}`,
     });
   }
 }
