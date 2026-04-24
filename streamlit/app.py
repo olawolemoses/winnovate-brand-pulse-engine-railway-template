@@ -211,6 +211,36 @@ st.markdown(
         background: #cce5ff; color: #004085;
         padding: 2px 10px; border-radius: 12px;
     }
+    .ops-callout {
+        border: 1px solid rgba(96, 165, 250, 0.22);
+        background:
+            linear-gradient(135deg, rgba(30, 64, 175, 0.18), rgba(15, 23, 42, 0.22)),
+            rgba(17, 24, 39, 0.82);
+        border-radius: 22px;
+        padding: 1rem 1.1rem;
+        box-shadow: 0 18px 36px rgba(15, 23, 42, 0.18);
+        margin: 0.35rem 0 1rem;
+    }
+    .ops-kicker {
+        color: #93c5fd;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.74rem;
+        font-weight: 700;
+        margin-bottom: 0.35rem;
+    }
+    .ops-title {
+        color: #f8fafc;
+        font-size: 1.2rem;
+        font-weight: 700;
+        margin: 0 0 0.3rem;
+    }
+    .ops-copy {
+        color: #cbd5e1;
+        font-size: 0.96rem;
+        line-height: 1.5;
+        margin: 0;
+    }
     .stApp { max-width: 1200px; margin: 0 auto; }
 </style>
 """,
@@ -420,10 +450,32 @@ with tab_pending:
     st.subheader("⏳ Items Awaiting Approval")
     active_brand_name = st.session_state.get("selected_place_name")
     active_brand_page_id = st.session_state.get("selected_brand_page_id")
+    trello_board_url = "https://trello.com/b/ldQuJBhF/brand-pulse-demo-board"
     if active_brand_name:
         st.caption(f"Viewing pending items for **{active_brand_name}**")
     else:
         st.caption("Select a brand to view pending items")
+
+    with st.container(border=False):
+        board_a, board_b = st.columns([1.05, 2.2], vertical_alignment="center")
+        with board_a:
+            st.link_button(
+                "📋 Open Trello Board",
+                trello_board_url,
+                type="secondary",
+                use_container_width=True,
+            )
+        with board_b:
+            st.markdown(
+                """
+                <div class="ops-callout">
+                  <div class="ops-kicker">Ops Board</div>
+                  <div class="ops-title">Friction items flow into Trello</div>
+                  <p class="ops-copy">Approve a friction alert here and it is dispatched to the board in a new tab. Trello blocks iframe embeds, so this stays as a direct launch action.</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     pending_items = []
     if active_brand_page_id:
@@ -489,15 +541,6 @@ with tab_pending:
                                 st.error(error_message)
                                 st.stop()
                             st.rerun()
-
-    # ── Trello quick-link at bottom of pending ──
-    st.divider()
-    trello_board_url = "https://trello.com/b/ldQuJBhF/brand-pulse-demo-board"
-    col_t1, col_t2 = st.columns([1, 3])
-    with col_t1:
-        st.link_button("📋 Open Trello Board", trello_board_url, type="secondary", use_container_width=True)
-    with col_t2:
-        st.caption("Approved friction items land on this board. Opens in a new tab (Trello blocks iframes).")
 
 # ── Tab 3: Live Items ──
 with tab_approved:
