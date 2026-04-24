@@ -25,6 +25,23 @@ st.set_page_config(
     layout="wide",
 )
 
+
+def set_selected_brand(place_name: str, place_id: str, brands: list[dict]):
+    st.session_state["selected_place_name"] = place_name
+    st.session_state["selected_place_id"] = place_id
+    matched_brand = next((brand for brand in brands if brand.get("place_id") == place_id), None)
+    st.session_state["selected_brand_page_id"] = matched_brand["page_id"] if matched_brand else None
+
+
+if "selected_place_name" not in st.session_state:
+    st.session_state["selected_place_name"] = None
+if "selected_place_id" not in st.session_state:
+    st.session_state["selected_place_id"] = None
+if "selected_brand_page_id" not in st.session_state:
+    st.session_state["selected_brand_page_id"] = None
+if "search_results" not in st.session_state:
+    st.session_state["search_results"] = []
+
 # ── Styling ──
 st.markdown(
     """
@@ -73,6 +90,30 @@ with st.sidebar:
     st.subheader("Registered Brands")
     brands = fetch_all_brands()
     if brands:
+        brand_options = {"All brands": None}
+        for brand in brands:
+            label = brand["name"] or brand["place_id"] or brand["page_id"]
+            brand_options[label] = brand
+
+        current_brand = next(
+            (brand for brand in brands if brand["page_id"] == st.session_state.get("selected_brand_page_id")),
+            None,
+        )
+        default_label = current_brand["name"] if current_brand and current_brand["name"] in brand_options else "All brands"
+        selected_brand_label = st.selectbox(
+            "Active brand context",
+            options=list(brand_options.keys()),
+            index=list(brand_options.keys()).index(default_label),
+            key="brand_context_selector",
+        )
+        selected_brand = brand_options[selected_brand_label]
+        if selected_brand:
+            st.session_state["selected_brand_page_id"] = selected_brand["page_id"]
+            st.session_state["selected_place_name"] = selected_brand["name"]
+            st.session_state["selected_place_id"] = selected_brand["place_id"]
+        else:
+            st.session_state["selected_brand_page_id"] = None
+
         for b in brands:
             st.caption(f"🏪 {b['name']}" + (f"  `{b['place_id'][:12]}...`" if b["place_id"] else ""))
     else:
@@ -102,96 +143,91 @@ with tab_new:
         st.write("")
         search_clicked = st.button("🔍 Search", type="primary", use_container_width=True)
 
-    if place_query and search_clicked:
+    if place_query and len(place_query) >= 2:
         with st.spinner(f"Searching for '{place_query}'..."):
-            candidates = search_places(place_query)
+            st.session_state["search_results"] = search_places(place_query, max_results=8)
+    elif not place_query:
+        st.session_state["search_results"] = []
 
-        if not candidates:
-            st.warning("No results found. Try a different search term.")
-        else:
-            st.success(f"Found {len(candidates)} result(s)")
-            options = {f"{c['name']} — {c['address']}": c for c in candidates}
-            selected_label = st.selectbox(
-                "Select the correct location:",
-                options=list(options.keys()),
-                key="place_selector",
-            )
+    candidates = st.session_state.get("search_results", [])
+    if place_query and search_clicked:
+        pass
 
-            selected = options[selected_label]
-            place_name = selected["name"]
-            place_id = selected["place_id"]
+    if place_query and candidates:
+        st.success(f"Found {len(candidates)} result(s)")
+        options = {f"{c['name']} — {c['address']}": c for c in candidates}
+        selected_label = st.selectbox(
+            "Select the correct location:",
+            options=list(options.keys()),
+            key="place_selector",
+        )
 
-            st.json(
-                {"name": place_name, "place_id": place_id},
-                expanded=False,
-            )
+        selected = options[selected_label]
+        place_name = selected["name"]
+        place_id = selected["place_id"]
+        set_selected_brand(place_name, place_id, brands)
 
-            st.session_state["selected_place_name"] = place_name
-            st.session_state["selected_place_id"] = place_id
+        st.json(
+            {"name": place_name, "place_id": place_id},
+            expanded=False,
+        )
 
-            # Trigger audit via OpenClaw webhook
-            if st.button("🚀 Run Pulse Audit Now", type="primary"):
-                target_url = os.getenv("OPENCLAW_WEBHOOK_URL", "")
-                # Fallback: guess Railway URL
-                if not target_url:
-                    railway_url = os.getenv("RAILWAY_PUBLIC_URL", "")
-                    if railway_url:
-                        target_url = railway_url.rstrip("/") + "/api/pulse-audit"
+        st.caption(
+            f"Viewing context: **{place_name}** (`{place_id[:16]}...`)"
+        )
 
-                if target_url:
-                    with st.spinner("Triggering audit pipeline..."):
-                        try:
-                            resp = httpx.post(
-                                target_url,
-                                json={
-                                    "place_id": place_id,
-                                    "place_name": place_name,
-                                },
-                                timeout=30,
+        if st.button("🚀 Run Pulse Audit Now", type="primary"):
+            target_url = os.getenv("OPENCLAW_WEBHOOK_URL", "")
+            if not target_url:
+                railway_url = os.getenv("RAILWAY_PUBLIC_URL", "")
+                if railway_url:
+                    target_url = railway_url.rstrip("/") + "/api/pulse-audit"
+
+            if target_url:
+                with st.spinner("Triggering audit pipeline..."):
+                    try:
+                        resp = httpx.post(
+                            target_url,
+                            json={
+                                "place_id": place_id,
+                                "place_name": place_name,
+                            },
+                            timeout=30,
+                        )
+                        if resp.is_success:
+                            st.success(
+                                f"✅ Pulse audit triggered for **{place_name}**!\n\n"
+                                "Check the Pending Review tab in a moment."
                             )
-                            if resp.is_success:
-                                st.success(
-                                    f"✅ Pulse audit triggered for **{place_name}**!\n\n"
-                                    "Check the Pending Review tab in a moment."
-                                )
-                            else:
-                                st.error(
-                                    f"Failed to trigger audit: {resp.status_code}"
-                                )
-                        except Exception as e:
-                            st.error(f"Connection error: {e}")
-                else:
-                    st.info(
-                        "Set OPENCLAW_WEBHOOK_URL env var to enable one-click audits.\n\n"
-                        "For now, ask the agent directly on Telegram."
-                    )
-
-    elif place_query and not search_clicked:
-        # Live search as user types
-        if len(place_query) >= 3:
-            candidates = search_places(place_query)
-            if candidates:
-                options = {
-                    f"{c['name']} — {c['address']}": c for c in candidates
-                }
-                selected_label = st.selectbox(
-                    "Select the correct location:",
-                    options=list(options.keys()),
-                    key="live_selector",
+                        else:
+                            st.error(
+                                f"Failed to trigger audit: {resp.status_code}"
+                            )
+                    except Exception as e:
+                        st.error(f"Connection error: {e}")
+            else:
+                st.info(
+                    "Set OPENCLAW_WEBHOOK_URL env var to enable one-click audits.\n\n"
+                    "For now, ask the agent directly on Telegram."
                 )
-                selected = options[selected_label]
-                st.session_state["selected_place_name"] = selected["name"]
-                st.session_state["selected_place_id"] = selected["place_id"]
-                st.caption(
-                    f"Selected: **{selected['name']}** (`{selected['place_id'][:16]}...`)"
-                )
+    elif place_query:
+        st.warning("No results found. Try a different search term.")
 
 # ── Tab 2: Pending Items ──
 with tab_pending:
     st.subheader("⏳ Items Awaiting Approval")
+    active_brand_name = st.session_state.get("selected_place_name")
+    active_brand_page_id = st.session_state.get("selected_brand_page_id")
+    if active_brand_name:
+        st.caption(f"Viewing pending items for **{active_brand_name}**")
+    else:
+        st.caption("Viewing pending items for all brands")
 
     with st.spinner("Loading pending pulse items..."):
-        pending_items = fetch_pulse_items(status_filter="Pending")
+        pending_items = fetch_pulse_items(
+            status_filter="Pending",
+            brand_page_id=active_brand_page_id,
+        )
 
     if not pending_items:
         st.info("No pending items. Run a new pulse audit!")
@@ -229,9 +265,19 @@ with tab_pending:
 # ── Tab 3: Live Items ──
 with tab_approved:
     st.subheader("✅ Live / Approved Items")
+    active_brand_name = st.session_state.get("selected_place_name")
+    active_brand_page_id = st.session_state.get("selected_brand_page_id")
+    if active_brand_name:
+        st.caption(f"Viewing approved items for **{active_brand_name}**")
+    else:
+        st.caption("Viewing approved items for all brands")
 
     with st.spinner("Loading approved pulse items..."):
-        live_items = fetch_pulse_items(status_filter="Live", page_size=100)
+        live_items = fetch_pulse_items(
+            status_filter="Live",
+            page_size=100,
+            brand_page_id=active_brand_page_id,
+        )
 
     if not live_items:
         st.info("No approved items yet. Approve some pending items first!")

@@ -41,8 +41,25 @@ def get_notion_token():
 
 # --- Google Places ---
 def search_places(query: str, max_results: int = 6):
-    """Text search for places. Returns list of {place_id, name, address}."""
+    """Autocomplete places. Returns list of {place_id, name, address}."""
     gmaps = get_gmaps()
+    predictions = gmaps.places_autocomplete(
+        input_text=query,
+        types="establishment",
+    )
+    if predictions:
+        places = []
+        for prediction in predictions[:max_results]:
+            structured = prediction.get("structured_formatting", {})
+            places.append(
+                {
+                    "place_id": prediction.get("place_id", ""),
+                    "name": structured.get("main_text", prediction.get("description", "")),
+                    "address": structured.get("secondary_text", prediction.get("description", "")),
+                }
+            )
+        return places
+
     results = gmaps.places(query=query, type="establishment")
     candidates = results.get("results", [])
     return [
@@ -118,7 +135,7 @@ def fetch_all_brands():
     return brands
 
 
-def fetch_pulse_items(status_filter: str = "Pending", page_size: int = 50):
+def fetch_pulse_items(status_filter: str = "Pending", page_size: int = 50, brand_page_id: str | None = None):
     """Fetch pulse items, optionally filtered by status."""
     notion = get_notion()
     db_id = get_pulse_db_id()
@@ -145,6 +162,8 @@ def fetch_pulse_items(status_filter: str = "Pending", page_size: int = 50):
         })
     if status_filter:
         items = [item for item in items if item["status"] == status_filter]
+    if brand_page_id:
+        items = [item for item in items if item["brand_relation"] == brand_page_id]
     return sorted(items, key=lambda item: item["content"], reverse=True)
 
 
