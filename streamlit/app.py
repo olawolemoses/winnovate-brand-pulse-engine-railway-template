@@ -44,6 +44,10 @@ if "search_results" not in st.session_state:
     st.session_state["search_results"] = []
 if "active_audit_job" not in st.session_state:
     st.session_state["active_audit_job"] = None
+if "audit_place_name" not in st.session_state:
+    st.session_state["audit_place_name"] = None
+if "audit_place_id" not in st.session_state:
+    st.session_state["audit_place_id"] = None
 
 
 def get_audit_target_url():
@@ -267,29 +271,35 @@ with st.sidebar:
     st.subheader("Registered Brands")
     brands = fetch_all_brands()
     if brands:
-        brand_options = {"No brand selected": None}
-        for brand in brands:
-            label = brand["name"] or brand["place_id"] or brand["page_id"]
-            brand_options[label] = brand
+        brand_by_id = {brand["page_id"]: brand for brand in brands}
+        brand_option_ids = ["__none__", *brand_by_id.keys()]
+        current_brand_id = st.session_state.get("selected_brand_page_id")
+        default_brand_id = current_brand_id if current_brand_id in brand_by_id else "__none__"
 
-        current_brand = next(
-            (brand for brand in brands if brand["page_id"] == st.session_state.get("selected_brand_page_id")),
-            None,
-        )
-        default_label = current_brand["name"] if current_brand and current_brand["name"] in brand_options else "No brand selected"
-        selected_brand_label = st.selectbox(
+        def format_brand_option(option_id: str):
+            if option_id == "__none__":
+                return "No brand selected"
+            brand = brand_by_id[option_id]
+            label = brand["name"] or brand["place_id"] or brand["page_id"]
+            suffix = f" · {brand['place_id'][:10]}..." if brand.get("place_id") else ""
+            return f"{label}{suffix}"
+
+        selected_brand_id = st.selectbox(
             "Active brand context",
-            options=list(brand_options.keys()),
-            index=list(brand_options.keys()).index(default_label),
+            options=brand_option_ids,
+            index=brand_option_ids.index(default_brand_id),
+            format_func=format_brand_option,
             key="brand_context_selector",
         )
-        selected_brand = brand_options[selected_brand_label]
-        if selected_brand:
+        if selected_brand_id != "__none__":
+            selected_brand = brand_by_id[selected_brand_id]
             st.session_state["selected_brand_page_id"] = selected_brand["page_id"]
             st.session_state["selected_place_name"] = selected_brand["name"]
             st.session_state["selected_place_id"] = selected_brand["place_id"]
         else:
             st.session_state["selected_brand_page_id"] = None
+            st.session_state["selected_place_name"] = None
+            st.session_state["selected_place_id"] = None
 
         for b in brands:
             st.caption(f"🏪 {b['name']}" + (f"  `{b['place_id'][:12]}...`" if b["place_id"] else ""))
@@ -392,7 +402,8 @@ with tab_new:
         selected = options[selected_label]
         place_name = selected["name"]
         place_id = selected["place_id"]
-        set_selected_brand(place_name, place_id, brands)
+        st.session_state["audit_place_name"] = place_name
+        st.session_state["audit_place_id"] = place_id
 
         st.json(
             {"name": place_name, "place_id": place_id},
@@ -409,6 +420,7 @@ with tab_new:
             if target_url:
                 with st.spinner("Triggering audit pipeline..."):
                     try:
+                        set_selected_brand(place_name, place_id, brands)
                         resp = httpx.post(
                             target_url,
                             json={
