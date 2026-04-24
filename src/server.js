@@ -1792,6 +1792,17 @@ app.get("/api/pulse-audit/:jobId", (req, res) => {
   return res.json({ ok: true, job });
 });
 
+// ── Clear pulse audit SQLite jobs ──
+app.post("/api/pulse-jobs/reset", (_req, res) => {
+  try {
+    pulseJobsDb.exec("DELETE FROM pulse_job_events; DELETE FROM pulse_jobs;");
+    return res.json({ ok: true });
+  } catch (err) {
+    log.error("pulse-audit", `reset failed: ${err.message}`);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.use(async (req, res) => {
   if (req.path === "/") {
     return res.sendFile(path.join(process.cwd(), "src", "public", "loading.html"));
