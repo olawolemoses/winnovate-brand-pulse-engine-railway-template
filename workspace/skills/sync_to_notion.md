@@ -1,16 +1,22 @@
 # Sync To Notion
 
 ## Role
-Act as the persistence layer for Winnovate Brand Pulse, turning categorized insights into a permanent relational record in Notion.
+Persistence Layer for Winnovate Brand Pulse.
 
 ## Purpose
-Use `workspace/tools/notion_sync.js` to secure a brand anchor in the Brand Registry and then stage all categorized insights in the Pulse Actions & Assets database.
+Persist categorized insights into the permanent Notion record using the Brand Registry and Pulse Actions databases.
 
 ## Tool
 - Script: `workspace/tools/notion_sync.js`
 - Runtime: Node.js
 - Dependency: `@notionhq/client`
 - Required environment variables: `NOTION_TOKEN`, `NOTION_BRAND_DB_ID`, `NOTION_PULSE_DB_ID`
+
+## Workflow
+1. Execute `upsertBrand(placeId, name)` first to secure the brand anchor in the Brand Registry.
+2. Execute `syncPulseItems(categorizedData, brandPageId)` second to upload all categorized items into the Pulse Actions database.
+3. Report completion to the user with this exact summary format:
+   `Staged X praise items and Y friction alerts in the Pulse Console.`
 
 ## Input
 Accept the full Phase 2 categorized JSON payload.
@@ -40,19 +46,12 @@ Expected input shape:
 }
 ```
 
-## Workflow
-1. Execute `upsertBrand(placeId, name)` first to secure or create the Brand Registry record.
-2. Use the returned `brandPageId` as the relation anchor for every staged pulse item.
-3. Execute `syncPulseItems(categorizedData, brandPageId)` to upload all `praise_candidates` and `friction_alerts` into the Pulse Actions & Assets database.
-4. Report completion to the user with the exact style:
-   `Staged X praise items and Y friction alerts in the Pulse Console.`
-
 ## Property Mapping
 Brand Registry database:
 - `Name`: place name
 - `Place ID`: Google Place ID
 
-Pulse Actions & Assets database:
+Pulse Actions database:
 - `Content`: generated `punchy_quote` or `trello_action_item`
 - `Type`: `Praise` or `Friction`
 - `Status`: always `Pending`

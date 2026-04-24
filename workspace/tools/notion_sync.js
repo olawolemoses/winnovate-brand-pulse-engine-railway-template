@@ -8,6 +8,16 @@ class ToolError extends Error {
   }
 }
 
+function formatIdPrefix(id) {
+  return String(id || "").slice(0, 5) || "unset";
+}
+
+function logDatabaseFailure(label, databaseId, error) {
+  console.error(
+    `[notion_sync] ${label} failed for database prefix=${formatIdPrefix(databaseId)}: ${error.message}`
+  );
+}
+
 function getNotionConfig() {
   const token = process.env.NOTION_TOKEN;
   const brandDbId = process.env.NOTION_BRAND_DB_ID;
@@ -57,7 +67,12 @@ async function upsertBrand(placeId, name) {
     if (search.results.length > 0) {
       return search.results[0].id;
     }
+  } catch (error) {
+    logDatabaseFailure("Brand lookup", brandDbId, error);
+    throw new ToolError(`Brand upsert failed: ${error.message}`);
+  }
 
+  try {
     const created = await client.pages.create({
       parent: { database_id: brandDbId },
       properties: {
@@ -72,6 +87,7 @@ async function upsertBrand(placeId, name) {
 
     return created.id;
   } catch (error) {
+    logDatabaseFailure("Brand create", brandDbId, error);
     throw new ToolError(`Brand upsert failed: ${error.message}`);
   }
 }
@@ -151,6 +167,7 @@ async function syncPulseItems(categorizedData, brandPageId) {
           results.friction_count += 1;
         }
       } catch (error) {
+        logDatabaseFailure(`${type} sync`, pulseDbId, error);
         throw new ToolError(`Pulse sync failed for ${type.toLowerCase()} item: ${error.message}`);
       }
     }
