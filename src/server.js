@@ -325,17 +325,19 @@ async function buildDispatchItem({ itemId, brandId, content, type }) {
 }
 
 async function runActionDispatcher(item) {
-  const dispatcherPath = path.join(WORKSPACE_DIR, "tools", "action_dispatcher.js");
+  // Resolve relative to the repo root (CWD), not WORKSPACE_DIR
+  const repoRoot = process.env.RAILWAY_PUBLIC_URL ? process.cwd() : WORKSPACE_DIR;
+  const dispatcherPath = path.join(repoRoot, "workspace", "tools", "action_dispatcher.js");
   const cmd = `node ${shellEscape(dispatcherPath)} --item ${shellEscape(JSON.stringify(item))}`;
   return await new Promise((resolve) => {
     childProcess.exec(
       cmd,
       {
-        cwd: WORKSPACE_DIR,
+        cwd: repoRoot,
         env: {
           ...process.env,
           OPENCLAW_STATE_DIR: STATE_DIR,
-          OPENCLAW_WORKSPACE_DIR: WORKSPACE_DIR,
+          OPENCLAW_WORKSPACE_DIR: repoRoot,
         },
         timeout: 30_000,
       },
