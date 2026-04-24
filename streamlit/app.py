@@ -62,7 +62,7 @@ with st.sidebar:
     # Check env vars
     notion_token = os.getenv("NOTION_TOKEN", "")
     maps_key = os.getenv("Maps_API_KEY", "")
-    openclaw_webhook = os.getenv("OPENCLAUD_WEBHOOK_URL", "")
+    openclaw_webhook_url = os.getenv("OPENCLAW_WEBHOOK_URL", os.getenv("RAILWAY_PUBLIC_URL", "") + "/api/pulse-audit")
 
     if not notion_token:
         st.warning("⚠️ NOTION_TOKEN not set")
@@ -130,12 +130,19 @@ with tab_new:
             st.session_state["selected_place_id"] = place_id
 
             # Trigger audit via OpenClaw webhook
-            if openclaw_webhook:
-                if st.button("🚀 Run Pulse Audit Now", type="primary"):
+            if st.button("🚀 Run Pulse Audit Now", type="primary"):
+                target_url = os.getenv("OPENCLAW_WEBHOOK_URL", "")
+                # Fallback: guess Railway URL
+                if not target_url:
+                    railway_url = os.getenv("RAILWAY_PUBLIC_URL", "")
+                    if railway_url:
+                        target_url = railway_url.rstrip("/") + "/api/pulse-audit"
+
+                if target_url:
                     with st.spinner("Triggering audit pipeline..."):
                         try:
                             resp = httpx.post(
-                                openclaw_webhook,
+                                target_url,
                                 json={
                                     "place_id": place_id,
                                     "place_name": place_name,
@@ -153,11 +160,11 @@ with tab_new:
                                 )
                         except Exception as e:
                             st.error(f"Connection error: {e}")
-            else:
-                st.info(
-                    "Set OPENCLAUD_WEBHOOK_URL to enable one-click audits.\n\n"
-                    "For now, ask the OpenClaw agent directly to run the audit."
-                )
+                else:
+                    st.info(
+                        "Set OPENCLAW_WEBHOOK_URL env var to enable one-click audits.\n\n"
+                        "For now, ask the agent directly on Telegram."
+                    )
 
     elif place_query and not search_clicked:
         # Live search as user types

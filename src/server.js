@@ -1412,6 +1412,55 @@ proxy.on("proxyReqWs", (proxyReq, req, socket, options, head) => {
   proxyReq.setHeader("Origin", PROXY_ORIGIN);
 });
 
+// ── Brand Pulse Webhook ──
+// Accepts POST /api/pulse-audit from the Streamlit dashboard
+// Forwards the audit request to the OpenClaw agent via its HTTP API
+app.post("/api/pulse-audit", express.json(), async (req, res) => {
+  const { place_id, place_name } = req.body || {};
+
+  if (!place_id || !place_name) {
+    return res.status(400).json({ ok: false, error: "place_id and place_name are required" });
+  }
+
+  if (!isConfigured() || !isGatewayReady()) {
+    return res.status(503).json({ ok: false, error: "Gateway is not ready" });
+  }
+
+  try {
+    // POST a message to the OpenClaw agent via the internal gateway API
+    const msg = `Run a pulse audit for ${place_name} (PlaceId: ${place_id})`;
+    const gwRes = await fetch(`${GATEWAY_TARGET}/api/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENCLAW_GATEWAY_TOKEN}`,
+      },
+      body: JSON.stringify({
+        text: msg,
+        source: "streamlit-dashboard",
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!gwRes.ok) {
+      const body = await gwRes.text().catch(() => "");
+      log.error("pulse-audit", `gateway returned ${gwRes.status}: ${body}`);
+      return res.status(502).json({ ok: false, error: "Gateway rejected the request" });
+    }
+
+    log.info("pulse-audit", `triggered audit for ${place_name} (${place_id})`);
+    return res.json({
+      ok: true,
+      message: msg,
+      place_id,
+      place_name,
+    });
+  } catch (err) {
+    log.error("pulse-audit", `failed: ${err.message}`);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.use(async (req, res) => {
   if (req.path === "/") {
     return res.sendFile(path.join(process.cwd(), "src", "public", "loading.html"));

@@ -89,17 +89,21 @@ The **Brand Pulse Console** is a Streamlit dashboard that provides the visual fa
 | `NOTION_BRAND_DB_ID` | Brand Registry database ID |
 | `NOTION_PULSE_DB_ID` | Pulse Actions database ID |
 | `Maps_API_KEY` | Google Places API key |
-| `OPENCLAUD_WEBHOOK_URL` | _(Optional)_ URL to trigger audits from the dashboard |
+| `OPENCLAW_WEBHOOK_URL` | _(Optional)_ URL to trigger audits from the dashboard. Defaults to `RAILWAY_PUBLIC_URL + /api/pulse-audit` |
 
 ### Architecture
 
 ```
 User → Streamlit Cloud (streamlit.app)  ──reads──→  Notion DB
                                   │
-                                  └──triggers──→  OpenClaw Agent (Railway, backend only)
+                                  └──POST /api/pulse-audit──→  OpenClaw Agent (Railway)
+                                                                │
+                                                                └──fetch+sync──→  Notion DB
 ```
 
 The dashboard is the public face. OpenClaw runs in the background as the engine.
+
+The webhook endpoint (`POST /api/pulse-audit`) accepts `{"place_id": "...", "place_name": "..."}` and forwards the audit request to the OpenClaw agent.
 
 ---
 
