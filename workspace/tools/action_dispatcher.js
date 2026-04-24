@@ -127,9 +127,12 @@ async function updateNotionItem(item, updates) {
     Status: { select: { name: updates.status } },
   };
 
+  // If there's a Trello link, append it to Original Review
   if (updates.ticketLink) {
-    properties["Ticket Link"] = {
-      url: updates.ticketLink,
+    const reviewText = item.review_text || "";
+    const trelloNote = `\n\n📋 Trello: ${updates.ticketLink}`;
+    properties["Original Review"] = {
+      rich_text: [{ text: { content: (reviewText + trelloNote).slice(0, 2000) } }],
     };
   }
 
