@@ -66,6 +66,41 @@ workspace/
 
 All pulse items land in **Pending** status. Nothing goes live without founder approval. Once approved, use the Execute Actions skill to dispatch to Notion (Live) and Trello.
 
+## 🖥️ Streamlit Dashboard (Brand Pulse Console)
+
+The **Brand Pulse Console** is a Streamlit dashboard that provides the visual face of the engine:
+
+- **Typeahead search** — Search Google Places in real-time, pick a business from autocomplete suggestions
+- **One-click pulse audit** — Trigger the full pipeline from the UI (requires `OPENCLAUD_WEBHOOK_URL`)
+- **Pending review queue** — View all praise/friction items awaiting your approval
+- **Approve & dispatch** — Click to move items from Pending → Live
+- **Live items view** — See all approved items
+
+### Deploy to Streamlit Cloud
+
+1. Push the `streamlit/` folder to GitHub
+2. Go to [share.streamlit.io](https://share.streamlit.io)
+3. Connect your repo → set the main file to `streamlit/app.py`
+4. Add these secrets in Streamlit Cloud:
+
+| Secret | Value |
+|---|---|
+| `NOTION_TOKEN` | Same token used by OpenClaw |
+| `NOTION_BRAND_DB_ID` | Brand Registry database ID |
+| `NOTION_PULSE_DB_ID` | Pulse Actions database ID |
+| `Maps_API_KEY` | Google Places API key |
+| `OPENCLAUD_WEBHOOK_URL` | _(Optional)_ URL to trigger audits from the dashboard |
+
+### Architecture
+
+```
+User → Streamlit Cloud (streamlit.app)  ──reads──→  Notion DB
+                                  │
+                                  └──triggers──→  OpenClaw Agent (Railway, backend only)
+```
+
+The dashboard is the public face. OpenClaw runs in the background as the engine.
+
 ---
 
 ## How it works (high level)
