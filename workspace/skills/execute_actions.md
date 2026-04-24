@@ -10,7 +10,7 @@ Use `workspace/tools/action_dispatcher.js` to finalize approved Brand Pulse item
 - Script: `workspace/tools/action_dispatcher.js`
 - Runtime: Node.js
 - Dependencies: `@notionhq/client`
-- Required environment variables for Notion: `NOTION_API_KEY`, `NOTION_BRAND_PULSE_DATABASE_ID`
+- Required environment variables for Notion: `NOTION_TOKEN`, `NOTION_BRAND_DB_ID`, `NOTION_PULSE_DB_ID`
 - Required environment variable for Trello URL mode: `TRELLO_AUTOMATION_URL`
 
 ## Input
