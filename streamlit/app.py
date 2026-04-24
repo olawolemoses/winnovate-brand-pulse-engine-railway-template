@@ -12,7 +12,6 @@ Streamlit UI for:
 import os
 import json
 import streamlit as st
-import streamlit.components.v1 as components
 import httpx
 from utils import (
     search_places,
@@ -87,35 +86,18 @@ def build_iframe_snippet(brand_id: str):
     )
 
 
-def render_codepen_button(brand_id: str):
-    iframe_snippet = build_iframe_snippet(brand_id)
-    if not iframe_snippet:
+def render_widget_buttons(brand_id: str):
+    widget_url = get_widget_url(brand_id)
+    if not widget_url:
         st.caption("Set `RAILWAY_PUBLIC_URL` or `OPENCLAW_WEBHOOK_URL` to generate a widget preview.")
         return
 
-    codepen_payload = json.dumps(
-        {
-            "title": "Winnovate Pulse Widget Preview",
-            "html": iframe_snippet,
-            "css": "body{margin:0;padding:24px;background:#f5f7fb;font-family:Inter,system-ui,sans-serif;}",
-        }
-    )
-    form_html = f"""
-    <form action="https://codepen.io/pen/define" method="POST" target="_blank">
-      <input type="hidden" name="data" value='{codepen_payload.replace("&", "&amp;").replace("'", "&#39;")}' />
-      <button type="submit" style="
-        width:100%;
-        padding:0.7rem 1rem;
-        border:none;
-        border-radius:0.8rem;
-        background:#111827;
-        color:#ffffff;
-        font:600 14px Inter, system-ui, sans-serif;
-        cursor:pointer;
-      ">Open Widget in CodePen</button>
-    </form>
-    """
-    components.html(form_html, height=56)
+    cola, colb = st.columns(2)
+    with cola:
+        st.link_button("🔗 Open Widget in New Tab", widget_url, type="secondary", use_container_width=True)
+    with colb:
+        iframe_snippet = build_iframe_snippet(brand_id)
+        st.code(iframe_snippet, language="html", line_numbers=False)
 
 
 def fetch_audit_job(job_id: str):
@@ -461,8 +443,7 @@ with tab_approved:
         st.markdown("### Marketing Widget")
         if iframe_snippet:
             st.caption("Embed this iframe anywhere to display live praise with encapsulated styling.")
-            st.code(iframe_snippet, language="html")
-            render_codepen_button(active_brand_page_id)
+            render_widget_buttons(active_brand_page_id)
         else:
             st.info("Widget URL unavailable. Set the public Railway URL env var first.")
 
