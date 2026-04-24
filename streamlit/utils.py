@@ -3,6 +3,7 @@
 import os
 import logging
 import googlemaps
+import httpx
 from notion_client import Client as NotionClient
 from notion_client.errors import APIResponseError
 
@@ -30,6 +31,13 @@ def get_notion():
             raise RuntimeError("Missing NOTION_TOKEN")
         _notion = NotionClient(auth=token)
     return _notion
+
+
+def get_notion_token():
+    token = os.getenv("NOTION_TOKEN")
+    if not token:
+        raise RuntimeError("Missing NOTION_TOKEN")
+    return token
 
 
 # --- Google Places ---
@@ -76,7 +84,27 @@ def _query_notion_collection(notion, collection_id: str, **kwargs):
                 raise
     if hasattr(notion, "databases") and hasattr(notion.databases, "query"):
         return notion.databases.query(database_id=collection_id, **kwargs)
-    raise RuntimeError("The installed notion-client does not support query operations.")
+    logger.warning(
+        "SDK query methods unavailable for %s; falling back to raw HTTP databases/query",
+        collection_id,
+    )
+    return _query_notion_database_http(collection_id, **kwargs)
+
+
+def _query_notion_database_http(database_id: str, **kwargs):
+    token = get_notion_token()
+    response = httpx.post(
+        f"https://api.notion.com/v1/databases/{database_id}/query",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json",
+        },
+        json=kwargs,
+        timeout=20.0,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def fetch_all_brands():
