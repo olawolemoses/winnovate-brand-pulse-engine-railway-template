@@ -271,8 +271,8 @@ st.title("📊 Brand Pulse Console")
 st.caption("Monitor brand health, review customer sentiment, and dispatch actions.")
 
 # ── Tab 1: New Audit ──
-tab_new, tab_pending, tab_approved, tab_trello = st.tabs(
-    ["🔍 New Pulse Audit", "⏳ Pending Review", "✅ Approved / Live", "📋 Trello Board"]
+tab_new, tab_pending, tab_approved = st.tabs(
+    ["🔍 New Pulse Audit", "⏳ Pending Review", "✅ Approved / Live"]
 )
 
 with tab_new:
@@ -490,6 +490,15 @@ with tab_pending:
                                 st.stop()
                             st.rerun()
 
+    # ── Trello quick-link at bottom of pending ──
+    st.divider()
+    trello_board_url = "https://trello.com/b/ldQuJBhF/brand-pulse-demo-board"
+    col_t1, col_t2 = st.columns([1, 3])
+    with col_t1:
+        st.link_button("📋 Open Trello Board", trello_board_url, type="secondary", use_container_width=True)
+    with col_t2:
+        st.caption("Approved friction items land on this board. Opens in a new tab (Trello blocks iframes).")
+
 # ── Tab 3: Live Items ──
 with tab_approved:
     st.subheader("✅ Live / Approved Items")
@@ -542,27 +551,3 @@ with tab_approved:
                         f"<span class='{badge}'>{label}</span>",
                         unsafe_allow_html=True,
                     )
-
-# ── Tab 4: Trello Board ──
-with tab_trello:
-    st.subheader("📋 Brand Pulse Trello Board")
-    st.caption("Friction items dispatched from this dashboard appear as Trello cards.")
-
-    trello_board_url = "https://trello.com/b/ldQuJBhF/brand-pulse-demo-board"
-
-    col_left, col_right = st.columns([1, 2])
-    with col_left:
-        st.link_button("🔗 Open Trello Board", trello_board_url, type="primary", use_container_width=True)
-        st.caption("Trello blocks embedding in iframes — opens in a new tab.")
-    with col_right:
-        st.info(
-            "**Tip:** Pin this tab next to the dashboard for a quick overview. "
-            "Cards created here use the **Brand Pulse Demo Board** list."
-        )
-
-    st.divider()
-    st.markdown("**Recent activity** — check Trello for the latest card placement.")
-    st.caption(
-        "Friction items → Sent to Trello → show up as cards in your board. "
-        "Each card includes: review text, author, rating, and a link back to the Notion page."
-    )
