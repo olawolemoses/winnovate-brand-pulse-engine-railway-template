@@ -5,7 +5,6 @@ import logging
 import googlemaps
 import httpx
 from notion_client import Client as NotionClient
-from notion_client.errors import APIResponseError
 
 # --- Clients (lazy init) ---
 _gmaps = None
@@ -66,24 +65,7 @@ def get_pulse_db_id():
 
 
 def _query_notion_collection(notion, collection_id: str, **kwargs):
-    """Query a Notion data source on newer SDKs, or a database on older ones."""
-    if hasattr(notion, "data_sources") and hasattr(notion.data_sources, "query"):
-        try:
-            return notion.data_sources.query(data_source_id=collection_id, **kwargs)
-        except APIResponseError as error:
-            logger.warning(
-                "data_sources.query failed for %s with code=%s; retrying as database",
-                collection_id,
-                getattr(error, "code", "unknown"),
-            )
-            if getattr(error, "status", None) != 404:
-                raise
-    if hasattr(notion, "databases") and hasattr(notion.databases, "query"):
-        return notion.databases.query(database_id=collection_id, **kwargs)
-    logger.warning(
-        "SDK query methods unavailable for %s; falling back to raw HTTP databases/query",
-        collection_id,
-    )
+    """Query a Notion database over raw HTTP for stable compatibility."""
     return _query_notion_database_http(collection_id, **kwargs)
 
 
