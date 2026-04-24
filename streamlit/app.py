@@ -12,6 +12,7 @@ Streamlit UI for:
 import os
 import json
 import streamlit as st
+import streamlit.components.v1 as components
 import httpx
 from utils import (
     search_places,
@@ -86,13 +87,31 @@ def build_iframe_snippet(brand_id: str):
     )
 
 
-def render_widget_buttons(brand_id: str):
+def render_widget_preview(brand_id: str):
     widget_url = get_widget_url(brand_id)
     if not widget_url:
         st.caption("Set `RAILWAY_PUBLIC_URL` or `OPENCLAW_WEBHOOK_URL` to generate a widget preview.")
+        return None
+    return widget_url
+
+
+def render_widget_section(brand_id: str):
+    widget_url = render_widget_preview(brand_id)
+    if not widget_url:
         return
 
-    cola, colb = st.columns(2)
+    st.markdown("### 🎨 Marketing Widget")
+    st.caption("Live preview of the widget card below — embed it anywhere customers visit.")
+
+    # Live iframe preview
+    components.html(
+        f'<iframe src="{widget_url}" width="100%" height="300" '
+        'style="border:1px solid #e5e7eb;border-radius:12px;" '
+        'loading="lazy"></iframe>',
+        height=320,
+    )
+
+    cola, colb = st.columns([1, 2])
     with cola:
         st.link_button("🔗 Open Widget in New Tab", widget_url, type="secondary", use_container_width=True)
     with colb:
@@ -438,14 +457,8 @@ with tab_approved:
         st.info("No approved items for this brand yet.")
     else:
         praise_live_items = [item for item in live_items if item["type"] == "Praise" and item["status"] == "Live"]
-        iframe_snippet = build_iframe_snippet(active_brand_page_id)
 
-        st.markdown("### Marketing Widget")
-        if iframe_snippet:
-            st.caption("Embed this iframe anywhere to display live praise with encapsulated styling.")
-            render_widget_buttons(active_brand_page_id)
-        else:
-            st.info("Widget URL unavailable. Set the public Railway URL env var first.")
+        render_widget_section(active_brand_page_id)
 
         if not praise_live_items:
             st.caption("Approve at least one praise item to populate the widget.")
