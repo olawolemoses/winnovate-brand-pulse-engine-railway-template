@@ -81,7 +81,7 @@ def build_iframe_snippet(brand_id: str):
     if not widget_url:
         return ""
     return (
-        f'<iframe src="{widget_url}" width="100%" height="240" '
+        f'<iframe src="{widget_url}" width="100%" height="320" '
         'style="border:0;border-radius:18px;overflow:hidden;background:transparent;" loading="lazy" '
         'referrerpolicy="no-referrer-when-downgrade"></iframe>'
     )
@@ -149,7 +149,7 @@ def render_widget_section(brand_id: str):
               <iframe
                 src="{widget_url}"
                 width="100%"
-                height="240"
+                height="320"
                 loading="lazy"
                 scrolling="no"
                 style="
@@ -162,7 +162,7 @@ def render_widget_section(brand_id: str):
               ></iframe>
             </div>
             """,
-            height=272,
+            height=352,
         )
 
         action_a, action_b = st.columns(2)

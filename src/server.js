@@ -429,14 +429,18 @@ async function fetchLivePraiseItems(brandId) {
 
   return (results.results || []).map((page) => {
     const props = page.properties || {};
+    const content = notionTitle(props, "Content") || notionText(props, "Content");
+    const reviewText = notionText(props, "Original Review", "Review Text");
     return {
       page_id: page.id,
-      content: notionTitle(props, "Content") || notionText(props, "Content"),
+      content,
       author: notionText(props, "Author"),
       rating: notionNumber(props, "Review Rating", "Rating") ?? 5,
-      review_text: notionText(props, "Original Review", "Review Text"),
+      review_text: reviewText,
+      display_text: reviewText || content,
+      subtext: reviewText && content && reviewText !== content ? content : "",
     };
-  }).filter((item) => item.content);
+  }).filter((item) => item.display_text);
 }
 
 function renderWidgetDocument(brandId, items) {
@@ -493,7 +497,7 @@ function renderWidgetDocument(brandId, items) {
         border-radius: 24px;
         padding: 24px;
         box-shadow: var(--shadow);
-        min-height: 196px;
+        min-height: 240px;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
@@ -517,8 +521,8 @@ function renderWidgetDocument(brandId, items) {
         margin-bottom: 14px;
       }
       .quote {
-        font-size: clamp(22px, 4vw, 30px);
-        line-height: 1.28;
+        font-size: clamp(20px, 3.3vw, 28px);
+        line-height: 1.34;
         font-weight: 700;
         margin: 0 0 18px;
       }
@@ -632,9 +636,10 @@ function renderWidgetDocument(brandId, items) {
         const item = items[index];
         card.classList.remove("visible");
         window.setTimeout(() => {
-          quote.textContent = item.content;
+          quote.textContent = item.display_text || item.content;
           author.textContent = item.author || "Verified customer";
-          context.textContent = item.review_text || ("Live social proof for " + brandId);
+          context.textContent = item.subtext || "";
+          context.style.display = item.subtext ? "block" : "none";
           stars.textContent = starString(item.rating);
           renderDots();
           card.classList.add("visible");
