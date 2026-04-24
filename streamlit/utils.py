@@ -54,6 +54,15 @@ def get_pulse_db_id():
     return os.getenv("NOTION_PULSE_DB_ID", "")
 
 
+def _query_notion_collection(notion, collection_id: str, **kwargs):
+    """Query a Notion data source on newer SDKs, or a database on older ones."""
+    if hasattr(notion, "data_sources") and hasattr(notion.data_sources, "query"):
+        return notion.data_sources.query(data_source_id=collection_id, **kwargs)
+    if hasattr(notion, "databases") and hasattr(notion.databases, "query"):
+        return notion.databases.query(database_id=collection_id, **kwargs)
+    raise RuntimeError("The installed notion-client does not support query operations.")
+
+
 def fetch_all_brands():
     """Return list of {page_id, name, place_id} from Brand Registry."""
     notion = get_notion()
@@ -61,15 +70,15 @@ def fetch_all_brands():
     if not db_id:
         return []
 
-    results = notion.databases.query(database_id=db_id, page_size=100)
+    results = _query_notion_collection(notion, db_id, page_size=100)
     brands = []
     for page in results.get("results", []):
         props = page.get("properties", {})
         name = ""
-        if "Name" in props and props["Name"]["title"]:
+        if "Name" in props and props["Name"].get("title"):
             name = props["Name"]["title"][0]["text"]["content"]
         place_id = ""
-        if "Place ID" in props and props["Place ID"]["rich_text"]:
+        if "Place ID" in props and props["Place ID"].get("rich_text"):
             place_id = props["Place ID"]["rich_text"][0]["text"]["content"]
         brands.append({
             "page_id": page["id"],
@@ -93,8 +102,9 @@ def fetch_pulse_items(status_filter: str = "Pending", page_size: int = 50):
             "select": {"equals": status_filter},
         }
 
-    results = notion.databases.query(
-        database_id=db_id,
+    results = _query_notion_collection(
+        notion,
+        db_id,
         filter=filter_params,
         sorts=[{"property": "Content", "direction": "descending"}],
         page_size=page_size,
@@ -108,9 +118,9 @@ def fetch_pulse_items(status_filter: str = "Pending", page_size: int = 50):
             "type": _select(props, "Type"),
             "status": _select(props, "Status"),
             "author": _rich_text(props, "Author"),
-            "rating": props.get("Review Rating", {}).get("number"),
-            "review_text": _rich_text(props, "Original Review"),
-            "brand_relation": props.get("Brand Registry", {}).get("relation", [{}])[0].get("id") if props.get("Brand Registry", {}).get("relation") else None,
+            "rating": _number(props, ["Review Rating", "Rating"]),
+            "review_text": _rich_text_any(props, ["Original Review", "Review Text"]),
+            "brand_relation": _relation_id(props, ["Brand Registry", "Brand"]),
         })
     return items
 
@@ -134,8 +144,31 @@ def _rich_text(props, key):
     return arr[0]["text"]["content"] if arr else ""
 
 
+def _rich_text_any(props, keys):
+    for key in keys:
+        value = _rich_text(props, key)
+        if value:
+            return value
+    return ""
+
+
 def _select(props, key):
     if key not in props:
         return ""
     sel = props[key].get("select")
     return sel["name"] if sel else ""
+
+
+def _number(props, keys):
+    for key in keys:
+        if key in props:
+            return props[key].get("number")
+    return None
+
+
+def _relation_id(props, keys):
+    for key in keys:
+        relation = props.get(key, {}).get("relation") or []
+        if relation:
+            return relation[0].get("id")
+    return None
