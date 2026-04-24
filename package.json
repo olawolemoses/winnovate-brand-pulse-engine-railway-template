@@ -15,7 +15,8 @@
     "http-proxy": "^1.18.1",
     "node-pty": "^1.0.0",
     "ws": "^8.18.0",
-    "@googlemaps/google-maps-services-js": "^3.4.1"
+    "@googlemaps/google-maps-services-js": "^3.4.1",
+    "@notionhq/client": "^2.2.15"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
