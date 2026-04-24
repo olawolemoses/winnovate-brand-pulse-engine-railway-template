@@ -81,42 +81,103 @@ def build_iframe_snippet(brand_id: str):
     if not widget_url:
         return ""
     return (
-        f'<iframe src="{widget_url}" width="100%" height="260" '
-        'style="border:0;overflow:hidden;" loading="lazy" '
+        f'<iframe src="{widget_url}" width="100%" height="240" '
+        'style="border:0;border-radius:18px;overflow:hidden;background:transparent;" loading="lazy" '
         'referrerpolicy="no-referrer-when-downgrade"></iframe>'
     )
 
 
-def render_widget_preview(brand_id: str):
-    widget_url = get_widget_url(brand_id)
-    if not widget_url:
+def render_codepen_button(brand_id: str):
+    iframe_snippet = build_iframe_snippet(brand_id)
+    if not iframe_snippet:
         st.caption("Set `RAILWAY_PUBLIC_URL` or `OPENCLAW_WEBHOOK_URL` to generate a widget preview.")
-        return None
-    return widget_url
+        return
+
+    codepen_payload = json.dumps(
+        {
+            "title": "Winnovate Pulse Widget Preview",
+            "html": iframe_snippet,
+            "css": "body{margin:0;padding:24px;background:#0f1117;font-family:Inter,system-ui,sans-serif;}",
+        }
+    )
+    safe_payload = (
+        codepen_payload.replace("&", "&amp;").replace("'", "&#39;")
+    )
+    components.html(
+        f"""
+        <form action="https://codepen.io/pen/define" method="POST" target="_blank">
+          <input type="hidden" name="data" value='{safe_payload}' />
+          <button type="submit" style="
+            width:100%;
+            min-height:42px;
+            padding:0.72rem 1rem;
+            border:none;
+            border-radius:14px;
+            background:linear-gradient(135deg,#2563eb,#111827);
+            color:#ffffff;
+            font:600 14px Inter, system-ui, sans-serif;
+            cursor:pointer;
+            box-shadow:0 12px 24px rgba(37,99,235,.22);
+          ">↗ Preview in CodePen</button>
+        </form>
+        """,
+        height=54,
+    )
 
 
 def render_widget_section(brand_id: str):
-    widget_url = render_widget_preview(brand_id)
+    widget_url = get_widget_url(brand_id)
     if not widget_url:
+        st.caption("Set `RAILWAY_PUBLIC_URL` or `OPENCLAW_WEBHOOK_URL` to generate a widget preview.")
         return
 
+    iframe_snippet = build_iframe_snippet(brand_id)
+
     st.markdown("### 🎨 Marketing Widget")
-    st.caption("Live preview of the widget card below — embed it anywhere customers visit.")
+    with st.container(border=True):
+        st.markdown("**Embed Kit**")
+        st.caption("Clean iframe embed for landing pages, partner sites, and campaign pages.")
 
-    # Live iframe preview
-    components.html(
-        f'<iframe src="{widget_url}" width="100%" height="300" '
-        'style="border:1px solid #e5e7eb;border-radius:12px;" '
-        'loading="lazy"></iframe>',
-        height=320,
-    )
+        components.html(
+            f"""
+            <div style="
+              padding:14px;
+              border-radius:22px;
+              background:linear-gradient(180deg, rgba(37,99,235,0.10), rgba(255,255,255,0.03));
+              border:1px solid rgba(148,163,184,0.20);
+            ">
+              <iframe
+                src="{widget_url}"
+                width="100%"
+                height="240"
+                loading="lazy"
+                scrolling="no"
+                style="
+                  display:block;
+                  border:0;
+                  border-radius:18px;
+                  overflow:hidden;
+                  background:transparent;
+                "
+              ></iframe>
+            </div>
+            """,
+            height=272,
+        )
 
-    cola, colb = st.columns([1, 2])
-    with cola:
-        st.link_button("🔗 Open Widget in New Tab", widget_url, type="secondary", use_container_width=True)
-    with colb:
-        iframe_snippet = build_iframe_snippet(brand_id)
-        st.code(iframe_snippet, language="html", line_numbers=False)
+        action_a, action_b = st.columns(2)
+        with action_a:
+            st.link_button(
+                "🔗 Open Widget",
+                widget_url,
+                type="secondary",
+                use_container_width=True,
+            )
+        with action_b:
+            render_codepen_button(brand_id)
+
+        st.caption("Iframe Embed Snippet")
+        st.code(iframe_snippet, language="html", line_numbers=False, wrap_lines=True)
 
 
 def fetch_audit_job(job_id: str):
