@@ -328,7 +328,7 @@ async function runActionDispatcher(item) {
   // Resolve relative to the repo root (CWD), not WORKSPACE_DIR
   const repoRoot = process.env.RAILWAY_PUBLIC_URL ? process.cwd() : WORKSPACE_DIR;
   const dispatcherPath = path.join(repoRoot, "workspace", "tools", "action_dispatcher.js");
-  const cmd = `node ${shellEscape(dispatcherPath)} --item ${shellEscape(JSON.stringify(item))}`;
+  const cmd = `node --no-deprecation ${shellEscape(dispatcherPath)} --item ${shellEscape(JSON.stringify(item))}`;
   return await new Promise((resolve) => {
     childProcess.exec(
       cmd,
@@ -342,16 +342,17 @@ async function runActionDispatcher(item) {
         timeout: 30_000,
       },
       (error, stdout, stderr) => {
+        // Only stdout for JSON parsing — stderr has Node deprecation noise
         if (error) {
           resolve({
             code: error.code ?? 1,
-            output: `${stdout || ""}${stderr || ""}`.trim(),
+            output: (stdout || "").trim(),
           });
           return;
         }
         resolve({
           code: 0,
-          output: `${stdout || ""}${stderr || ""}`.trim(),
+          output: (stdout || "").trim(),
         });
       },
     );
