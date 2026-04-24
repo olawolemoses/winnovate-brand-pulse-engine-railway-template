@@ -93,6 +93,7 @@ def _query_notion_collection(notion, collection_id: str, **kwargs):
 
 def _query_notion_database_http(database_id: str, **kwargs):
     token = get_notion_token()
+    payload = {key: value for key, value in kwargs.items() if value is not None}
     response = httpx.post(
         f"https://api.notion.com/v1/databases/{database_id}/query",
         headers={
@@ -100,9 +101,16 @@ def _query_notion_database_http(database_id: str, **kwargs):
             "Notion-Version": "2022-06-28",
             "Content-Type": "application/json",
         },
-        json=kwargs,
+        json=payload,
         timeout=20.0,
     )
+    if response.status_code >= 400:
+        logger.warning(
+            "raw HTTP database query failed for %s with status=%s body=%s",
+            database_id,
+            response.status_code,
+            response.text,
+        )
     response.raise_for_status()
     return response.json()
 
@@ -139,18 +147,9 @@ def fetch_pulse_items(status_filter: str = "Pending", page_size: int = 50):
     if not db_id:
         return []
 
-    filter_params = None
-    if status_filter:
-        filter_params = {
-            "property": "Status",
-            "select": {"equals": status_filter},
-        }
-
     results = _query_notion_collection(
         notion,
         db_id,
-        filter=filter_params,
-        sorts=[{"property": "Content", "direction": "descending"}],
         page_size=page_size,
     )
     items = []
@@ -166,7 +165,9 @@ def fetch_pulse_items(status_filter: str = "Pending", page_size: int = 50):
             "review_text": _rich_text_any(props, ["Original Review", "Review Text"]),
             "brand_relation": _relation_id(props, ["Brand Registry", "Brand"]),
         })
-    return items
+    if status_filter:
+        items = [item for item in items if item["status"] == status_filter]
+    return sorted(items, key=lambda item: item["content"], reverse=True)
 
 
 def update_pulse_status(page_id: str, new_status: str):
