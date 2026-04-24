@@ -245,6 +245,9 @@ st.markdown(
         line-height: 1.5;
         margin: 0;
     }
+    .ops-button-wrap {
+        margin-top: 1rem;
+    }
     .stApp { max-width: 1200px; margin: 0 auto; }
 </style>
 """,
@@ -469,25 +472,24 @@ with tab_pending:
         st.caption("Select a brand to view pending items")
 
     with st.container(border=False):
-        board_a, board_b = st.columns([1.05, 2.2], vertical_alignment="center")
-        with board_a:
-            st.link_button(
-                "📋 Open The Trello Board",
-                trello_board_url,
-                type="secondary",
-                use_container_width=True,
-            )
-        with board_b:
-            st.markdown(
-                """
-                <div class="ops-callout">
-                  <div class="ops-kicker">Ops Board</div>
-                  <div class="ops-title">Friction items flow into Trello</div>
-                  <p class="ops-copy">This is the operating queue for customer issues that need follow-up. Once you approve a friction alert, Pulse turns it into a Trello task so the team can assign it, track progress, and close the loop on the underlying customer complaint.</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+        st.markdown(
+            """
+            <div class="ops-callout">
+              <div class="ops-kicker">Ops Board</div>
+              <div class="ops-title">Friction items flow into Trello</div>
+              <p class="ops-copy">This is the operating queue for customer issues that need follow-up. Once you approve a friction alert, Pulse turns it into a Trello task so the team can assign it, track progress, and close the loop on the underlying customer complaint.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown('<div class="ops-button-wrap">', unsafe_allow_html=True)
+        st.link_button(
+            "📋 Open The Trello Board",
+            trello_board_url,
+            type="secondary",
+            use_container_width=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
     pending_items = []
     if active_brand_page_id:
