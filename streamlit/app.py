@@ -472,7 +472,7 @@ with tab_pending:
         board_a, board_b = st.columns([1.05, 2.2], vertical_alignment="center")
         with board_a:
             st.link_button(
-                "📋 Open Trello Board",
+                "📋 Open The Trello Board",
                 trello_board_url,
                 type="secondary",
                 use_container_width=True,
@@ -483,7 +483,7 @@ with tab_pending:
                 <div class="ops-callout">
                   <div class="ops-kicker">Ops Board</div>
                   <div class="ops-title">Friction items flow into Trello</div>
-                  <p class="ops-copy">Approve a friction alert here and it is dispatched to the board in a new tab. Trello blocks iframe embeds, so this stays as a direct launch action.</p>
+                  <p class="ops-copy">This is the operating queue for customer issues that need follow-up. Once you approve a friction alert, Pulse turns it into a Trello task so the team can assign it, track progress, and close the loop on the underlying customer complaint.</p>
                 </div>
                 """,
                 unsafe_allow_html=True,
