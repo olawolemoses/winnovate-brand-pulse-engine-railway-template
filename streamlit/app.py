@@ -256,8 +256,7 @@ st.markdown(
 
 # ── Sidebar ──
 with st.sidebar:
-    st.image("https://img.icons8.com/fluency/96/brand.png", width=48)
-    st.title("Brand Pulse")
+    st.markdown("## 📊 Brand Pulse")
     st.caption("Powered by Winnovate")
 
     # Check env vars
