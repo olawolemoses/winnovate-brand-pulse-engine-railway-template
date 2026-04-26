@@ -1,238 +1,428 @@
-# OpenClaw Railway Template
+# Winnovate Brand Pulse Engine
 
-## Security Notice
+Brand Pulse is a closed-loop brand operations system built on top of the OpenClaw Railway template. It turns recent Google reviews into two business outputs:
 
-> **This template exposes your OpenClaw gateway to the public internet.** **Please read the [OpenClaw security documentation](https://docs.openclaw.ai/gateway/security) before deploying** to understand the risks and recommended configuration. If you only use chat channels (Telegram, Discord, Slack) and don't need the gateway dashboard, you can remove the public endpoint from Railway after setup.
+- `Praise` for marketing, published into a live embeddable widget
+- `Friction` for operations, dispatched into Trello as trackable work
 
-<img width="1860" height="2624" alt="CleanShot 2026-02-23 at 21 59 06@2x" src="https://github.com/user-attachments/assets/2605d44c-4319-4e92-838c-3caa726b9595" />
+This repo contains the full runtime:
 
-## What you get
+- a Railway-hosted Express control plane
+- an OpenClaw-derived workspace with custom Brand Pulse skills and tools
+- a Streamlit HITL dashboard
+- Notion-backed persistence for brand memory and approval queues
+- SQLite-backed job tracking for audit progress and polling
 
-- **OpenClaw Gateway + Control UI** (served at `/` and `/openclaw`)
-- A friendly **Setup Wizard** at `/setup` (protected by a password)
-- Optional **Web Terminal** at `/tui` for browser-based TUI access
-- Persistent state via **Railway Volume** (so config/credentials/memory survive redeploys)
+The current production flow runs the audit pipeline inline inside the Express backend, while keeping the OpenClaw workspace and setup model for tool definitions, operational compatibility, and chat-channel integration.
 
-## 🏆 Winnovate Brand Pulse Engine
+## What This Repo Does
 
-A **4-phase brand health monitoring pipeline** that runs on OpenClaw. Built for the OpenClaw Hackathon.
+From a developer perspective, the system works like this:
 
-### How It Works
+1. A user starts an audit from Telegram or the Streamlit dashboard.
+2. The Express server receives the request and creates a persisted audit job.
+3. The backend fetches Google Places reviews and categorizes them into `Praise` or `Friction`.
+4. The system writes the resulting items to Notion for long-term storage and approval.
+5. A human approves the items in Streamlit.
+6. Approved praise becomes `Live` and is exposed through an iframe widget.
+7. Approved friction is dispatched into Trello and marked as sent.
 
-1. **Fetch** — Pulls the last 7 days of Google Places reviews via API
-2. **Categorize** — AI classifies each review as *Praise* (for marketing) or *Friction* (for ops), extracts punchy quotes and actionable Trello items
-3. **Upsert Brand** — Registers or updates the brand in a Notion Brand Registry (relational database)
-4. **Sync Pulse Items** — Writes all categorized items to a Pulse Actions database with `Pending` status (founder must approve before going Live)
+## Architecture
 
-### Quick Demo
+Core runtime pieces:
 
+- `src/server.js`
+  Express control layer, audit endpoints, widget endpoint, dispatch endpoint, SQLite job tracker, and OpenClaw wrapper runtime.
+
+- `workspace/tools/google_places_tool.js`
+  Google Places review fetch tool.
+
+- `workspace/tools/notion_sync.js`
+  Notion brand upsert and pulse-item sync tool.
+
+- `workspace/tools/action_dispatcher.js`
+  Final-mile dispatcher for approved items, including Trello card creation and Notion status updates.
+
+- `workspace/skills/*.md`
+  OpenClaw skill definitions for the Brand Pulse workflow.
+
+- `streamlit/app.py`
+  Human-in-the-loop dashboard for running audits, reviewing items, approving outputs, and generating the marketing embed.
+
+- `streamlit/utils.py`
+  Dashboard helpers for Google Places search, Notion queries, and item retrieval.
+
+### Runtime Data Stores
+
+- `Notion`
+  Long-term system of record for the Brand Registry and Pulse Actions database.
+
+- `SQLite`
+  Real-time job tracking for audit progress and status polling.
+
+- `Railway Persistent Volume`
+  Preserves `/data` so state survives redeploys.
+
+## Repository Layout
+
+```text
+.
+├── assets/                    # Submission/demo images
+├── src/
+│   ├── public/                # Setup UI, loading UI, TUI UI, logs UI
+│   └── server.js              # Main runtime server
+├── streamlit/
+│   ├── app.py                 # Brand Pulse Console
+│   ├── utils.py               # Streamlit helpers
+│   └── requirements.txt       # Dashboard Python dependencies
+├── workspace/
+│   ├── skills/
+│   │   ├── brand_pulse.md
+│   │   ├── fetch_brand_pulse.md
+│   │   ├── brand_pulse_categorizer.md
+│   │   ├── sync_to_notion.md
+│   │   └── execute_actions.md
+│   └── tools/
+│       ├── google_places_tool.js
+│       ├── notion_sync.js
+│       ├── action_dispatcher.js
+│       └── resolve_notion_data_sources.js
+├── Dockerfile
+├── entrypoint.sh
+├── railway.toml
+├── package.json
+└── README.md
 ```
-Run a pulse audit for Hard Rock Cafe Lagos
+
+## Stack
+
+### Backend
+
+- Node.js 22+
+- Express
+- `@googlemaps/google-maps-services-js`
+- `@notionhq/client`
+- SQLite via `node:sqlite`
+
+### Dashboard
+
+- Streamlit
+- `notion-client==2.7.0`
+- `httpx`
+- `googlemaps`
+
+### External Services
+
+- Google Places API
+- Notion
+- Trello
+- Railway
+- Telegram Bot API
+
+## Environment Variables
+
+### Core Runtime
+
+| Variable | Required | Purpose |
+|---|---:|---|
+| `PORT` | Yes | Express server port, defaults to `8080` |
+| `SETUP_PASSWORD` | Yes | Password for the `/setup` UI |
+| `OPENCLAW_STATE_DIR` | No | Defaults to `/data/.openclaw` in deployment |
+| `OPENCLAW_WORKSPACE_DIR` | No | Defaults to `/data/workspace` in deployment |
+
+### Brand Pulse Integrations
+
+| Variable | Required | Purpose |
+|---|---:|---|
+| `Maps_API_KEY` | Yes | Google Places API access |
+| `NOTION_TOKEN` | Yes | Notion integration token |
+| `NOTION_BRAND_DB_ID` | Yes | Notion Brand Registry database id |
+| `NOTION_PULSE_DB_ID` | Yes | Notion Pulse Actions database id |
+
+### Trello Dispatch
+
+| Variable | Required | Purpose |
+|---|---:|---|
+| `TRELLO_KEY` | Required for friction dispatch | Trello API key |
+| `TRELLO_TOKEN` | Required for friction dispatch | Trello API token |
+| `TRELLO_LIST_ID` | Required for friction dispatch | Trello list to create cards in |
+
+### Dashboard / Public URLs
+
+| Variable | Required | Purpose |
+|---|---:|---|
+| `RAILWAY_PUBLIC_URL` | Recommended | Used by Streamlit to build public audit, dispatch, and widget URLs |
+| `OPENCLAW_WEBHOOK_URL` | Optional | Overrides the default audit trigger endpoint |
+
+### Optional OpenClaw / TUI Runtime
+
+| Variable | Required | Purpose |
+|---|---:|---|
+| `ENABLE_WEB_TUI` | No | Enables `/tui` |
+| `TUI_IDLE_TIMEOUT_MS` | No | TUI idle timeout |
+| `TUI_MAX_SESSION_MS` | No | Maximum TUI session duration |
+
+## Deploying on Railway
+
+This repo was adapted from the Railway OpenClaw template and keeps that deployment model.
+
+### Expected Railway Shape
+
+- Dockerfile build
+- public service on port `8080`
+- persistent volume mounted at `/data`
+- healthcheck on `/setup/healthz`
+
+`railway.toml` currently uses:
+
+```toml
+[build]
+builder = "dockerfile"
+
+[deploy]
+healthcheckPath = "/setup/healthz"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+
+[variables]
+PORT = "8080"
 ```
 
-The agent will:
-1. Fetch 7-day reviews from Google Places
-2. Categorize into praise/friction with enriched content
-3. Upsert the brand in Notion Brand Registry
-4. Sync items to the Pulse Actions database
-5. Report: "Staged X praise items and Y friction alerts in the Pulse Console."
+### Deployment Steps
 
-### Architecture
+1. Fork this repo.
+2. Create a Railway project from the repo.
+3. Attach a persistent volume at `/data`.
+4. Set the required environment variables.
+5. Deploy.
+6. Open `/setup` and complete OpenClaw onboarding.
+7. Connect Telegram if you want chat-triggered audits.
 
-```
-workspace/
-├── skills/
-│   ├── brand_pulse.md          ← Main orchestrator skill
-│   ├── fetch_brand_pulse.md    ← Phase 1: Fetch reviews
-│   ├── brand_pulse_categorizer.md ← Phase 2: Categorize & enrich
-│   ├── sync_to_notion.md       ← Phase 3: Persist to Notion
-│   └── execute_actions.md      ← Phase 4: Dispatch approved items
-└── tools/
-    ├── google_places_tool.js   ← Google Places API wrapper
-    ├── notion_sync.js          ← Brand upsert + pulse sync
-    └── action_dispatcher.js    ← Final-mile dispatcher (Notion + Trello)
-```
+### Important Setup Behavior
 
-### Requirements
+- The repo syncs workspace content from `/app/workspace` into `/data/workspace` on startup.
+- Runtime state is preserved in `/data`, not `/app`.
+- The setup page remains the operational entry point for the OpenClaw runtime.
 
-| Env Variable | Purpose |
+## Running the Streamlit Dashboard
+
+The dashboard can be deployed separately or run locally.
+
+### Required Dashboard Secrets
+
+| Secret | Purpose |
 |---|---|
-| `NOTION_TOKEN` | Notion API integration token |
-| `NOTION_BRAND_DB_ID` | Brand Registry database ID |
-| `NOTION_PULSE_DB_ID` | Pulse Actions database ID |
-| `Maps_API_KEY` | Google Places API key |
+| `NOTION_TOKEN` | Notion access |
+| `NOTION_BRAND_DB_ID` | Brand Registry database |
+| `NOTION_PULSE_DB_ID` | Pulse Actions database |
+| `Maps_API_KEY` | Google Places autocomplete/search |
+| `RAILWAY_PUBLIC_URL` | Public URL of the Railway backend |
+| `OPENCLAW_WEBHOOK_URL` | Optional override for audit trigger |
 
-### Human-in-the-Loop
-
-All pulse items land in **Pending** status. Nothing goes live without founder approval. Once approved, use the Execute Actions skill to dispatch to Notion (Live) and Trello.
-
-## 🖥️ Streamlit Dashboard (Brand Pulse Console)
-
-The **Brand Pulse Console** is a Streamlit dashboard that provides the visual face of the engine:
-
-- **Typeahead search** — Search Google Places in real-time, pick a business from autocomplete suggestions
-- **One-click pulse audit** — Trigger the full pipeline from the UI (requires `OPENCLAUD_WEBHOOK_URL`)
-- **Pending review queue** — View all praise/friction items awaiting your approval
-- **Approve & dispatch** — Click to move items from Pending → Live
-- **Live items view** — See all approved items
-
-### Deploy to Streamlit Cloud
-
-1. Push the `streamlit/` folder to GitHub
-2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Connect your repo → set the main file to `streamlit/app.py`
-4. Add these secrets in Streamlit Cloud:
-
-| Secret | Value |
-|---|---|
-| `NOTION_TOKEN` | Same token used by OpenClaw |
-| `NOTION_BRAND_DB_ID` | Brand Registry database ID |
-| `NOTION_PULSE_DB_ID` | Pulse Actions database ID |
-| `Maps_API_KEY` | Google Places API key |
-| `OPENCLAW_WEBHOOK_URL` | _(Optional)_ URL to trigger audits from the dashboard. Defaults to `RAILWAY_PUBLIC_URL + /api/pulse-audit` |
-
-### Architecture
-
-```
-User → Streamlit Cloud (streamlit.app)  ──reads──→  Notion DB
-                                  │
-                                  └──POST /api/pulse-audit──→  OpenClaw Agent (Railway)
-                                                                │
-                                                                └──fetch+sync──→  Notion DB
-```
-
-The dashboard is the public face. OpenClaw runs in the background as the engine.
-
-The webhook endpoint (`POST /api/pulse-audit`) accepts `{"place_id": "...", "place_name": "..."}` and forwards the audit request to the OpenClaw agent.
-
----
-
-## How it works (high level)
-
-- The container runs a wrapper web server.
-- The wrapper protects `/setup` with `SETUP_PASSWORD`.
-- During setup, the wrapper runs `openclaw onboard --non-interactive ...` inside the container, writes state to the volume, and then starts the gateway.
-- After setup, **`/` is OpenClaw**. The wrapper reverse-proxies all traffic (including WebSockets) to the local gateway process.
-
-## Getting chat tokens (so you don't have to scramble)
-
-### Telegram bot token
-
-1. Open Telegram and message **@BotFather**
-2. Run `/newbot` and follow the prompts
-3. BotFather will give you a token that looks like: `123456789:AA...`
-4. Paste that token into `/setup`
-
-### Discord bot token
-
-1. Go to the Discord Developer Portal: https://discord.com/developers/applications
-2. **New Application** → pick a name
-3. Open the **Bot** tab → **Add Bot**
-4. Copy the **Bot Token** and paste it into `/setup`
-5. Invite the bot to your server (OAuth2 URL Generator → scopes: `bot`, `applications.commands`; then choose permissions)
-
-## Web Terminal (TUI)
-
-The template includes an optional web-based terminal that runs `openclaw tui` in your browser.
-
-### Enabling
-
-Set `ENABLE_WEB_TUI=true` in your Railway Variables. The terminal is **disabled by default**.
-
-Once enabled, access it at `/tui` or via the "Open Terminal" button on the setup page.
-
-### Security
-
-The web TUI implements multiple security layers:
-
-| Control | Description |
-|---------|-------------|
-| **Opt-in only** | Disabled by default, requires explicit `ENABLE_WEB_TUI=true` |
-| **Password protected** | Uses the same `SETUP_PASSWORD` as the setup wizard |
-| **Single session** | Only 1 concurrent TUI session allowed at a time |
-| **Idle timeout** | Auto-closes after 5 minutes of inactivity (configurable via `TUI_IDLE_TIMEOUT_MS`) |
-| **Max duration** | Hard limit of 30 minutes per session (configurable via `TUI_MAX_SESSION_MS`) |
-
-### Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ENABLE_WEB_TUI` | `false` | Set to `true` to enable |
-| `TUI_IDLE_TIMEOUT_MS` | `300000` (5 min) | Closes session after inactivity |
-| `TUI_MAX_SESSION_MS` | `1800000` (30 min) | Maximum session duration |
-
-## Local testing
+### Local Run
 
 ```bash
-docker build -t openclaw-railway-template .
+cd streamlit
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+## Local Development
+
+### Node Runtime
+
+```bash
+pnpm install
+pnpm run dev
+```
+
+### Docker
+
+```bash
+docker build -t winnovate-brand-pulse .
 
 docker run --rm -p 8080:8080 \
   -e PORT=8080 \
   -e SETUP_PASSWORD=test \
-  -e ENABLE_WEB_TUI=true \
   -e OPENCLAW_STATE_DIR=/data/.openclaw \
   -e OPENCLAW_WORKSPACE_DIR=/data/workspace \
   -v $(pwd)/.tmpdata:/data \
-  openclaw-railway-template
-
-# Setup wizard: http://localhost:8080/setup (password: test)
-# Web terminal: http://localhost:8080/tui (after setup)
+  winnovate-brand-pulse
 ```
 
-## FAQ
+## HTTP Endpoints
 
-**Q: How do I access the setup page?**
+### Audit
 
-A: Go to `/setup` on your deployed instance. When prompted for credentials, use the generated `SETUP_PASSWORD` from your Railway Variables as the password. The username field is ignored—you can leave it empty or enter anything.
+- `POST /api/pulse-audit`
+  Starts a new audit job.
 
-**Q: I see "gateway disconnected" or authentication errors in the Control UI. What should I do?**
+Request:
 
-A: Go back to `/setup` and click the "Open OpenClaw UI" button from there. The setup page passes the required auth token to the UI. Accessing the UI directly without the token will cause connection errors.
-
-**Q: I don't see the TUI option on the setup page.**
-
-A: Make sure `ENABLE_WEB_TUI=true` is set in your Railway Variables and redeploy. The web terminal is disabled by default.
-
-**Q: How do I approve pairing for Telegram or Discord?**
-
-A: Go to `/setup` and use the "Approve Pairing" dialog to approve pending pairing requests from your chat channels.
-
-**Q: I see "pairing required" when opening the Control UI. How do I fix it?**
-
-A: New browsers/devices need a one-time approval from the gateway. Go to `/setup`, click "Manage Devices" in the Devices section, and click "Approve Latest Request". Refresh the Control UI and it should connect. Local connections (127.0.0.1) are auto-approved; remote connections (LAN, public URL) require explicit approval.
-
-**Q: How do I change the AI model after setup?**
-
-A: Use the OpenClaw CLI to switch models. Access the web terminal at `/tui` (if enabled) or SSH into your container and run:
-
-```bash
-openclaw models set provider/model-id
+```json
+{
+  "place_id": "PLACE_ID",
+  "place_name": "Business Name"
+}
 ```
 
-For example: `openclaw models set anthropic/claude-sonnet-4-20250514` or `openclaw models set openai/gpt-4-turbo`. Use `openclaw models list --all` to see available models.
+- `GET /api/pulse-audit/:jobId`
+  Returns the current audit status and event trail.
 
-**Q: How do I access configuration after the initial setup?**
+### Dispatch
 
-A: Visit `/setup` on your deployed instance at any time — it works both before and after setup. Once configured, the setup page shows your current status along with management tools: device approval, health checks (Run Doctor), data export, and a reset option. You'll need your `SETUP_PASSWORD` to access it.
+- `POST /api/pulse-dispatch`
+  Dispatches an approved item.
 
-**Q: My config seems broken or I'm getting strange errors. How do I fix it?**
+Request:
 
-A: Go to `/setup` and click the "Run Doctor" button. This runs `openclaw doctor --repair` which performs health checks on your gateway and channels, creates a backup of your config, and removes any unrecognized or corrupted configuration keys.
+```json
+{
+  "item_id": "notion-page-id",
+  "brand_id": "notion-brand-page-id",
+  "content": "Fix slow service during lunch rush",
+  "type": "Friction"
+}
+```
 
-## Screenshots
+### Widget
 
-## Setup
+- `GET /widget/:brandId`
+  Returns the standalone iframe widget document for live praise items.
 
-<img width="2110" height="2032" alt="CleanShot 2026-02-23 at 21 57 59@2x" src="https://github.com/user-attachments/assets/28640eec-fa35-42f2-ba56-cb1fbb9525de" />
+## Brand Pulse Workflow
 
-## TUI
+### Phase 1: Review Fetch
 
-<img width="2510" height="608" alt="CleanShot 2026-02-23 at 22 08 20@2x" src="https://github.com/user-attachments/assets/61147ec2-ddd5-4b5b-b9ac-0dd81a1ae4c7" />
+- Source: Google Places API
+- Tool: `workspace/tools/google_places_tool.js`
+- Output: recent review JSON
 
-## Device approval
+### Phase 2: Categorization
 
-<img width="1712" height="1376" alt="CleanShot 2026-02-23 at 21 59 21@2x" src="https://github.com/user-attachments/assets/f30ab683-dbc2-4980-ace7-152265e00c79" />
+- Skill: `workspace/skills/brand_pulse_categorizer.md`
+- Output:
+  - `praise_candidates`
+  - `friction_alerts`
+  - `punchy_quote`
+  - `trello_action_item`
 
-## Support
+### Phase 3: Persistence
 
-Need help? [Request support on Railway Station](https://station.railway.com/all-templates/d0880c01-2cc5-462c-8b76-d84c1a203348)
+- Tool: `workspace/tools/notion_sync.js`
+- Skill: `workspace/skills/sync_to_notion.md`
+- Effect:
+  - upsert brand
+  - create pulse items in Notion
+  - set initial status to `Pending`
+
+### Phase 4: Approval and Final Action
+
+- Dashboard approval happens in Streamlit
+- Praise:
+  - becomes `Live`
+  - appears in the iframe widget
+- Friction:
+  - becomes `Sent to Trello`
+  - gets a Trello card via `action_dispatcher.js`
+
+## Notion Model
+
+### Brand Registry
+
+Stores:
+
+- canonical brand name
+- Google Place ID
+- relation anchor for downstream pulse items
+
+### Pulse Actions Database
+
+Stores:
+
+- content
+- type (`Praise` or `Friction`)
+- status (`Pending`, `Live`, `Sent to Trello`)
+- brand relation
+- rating
+- author
+- original review text
+- Trello ticket link when dispatched
+
+## Widget Behavior
+
+The marketing widget is served as a full HTML document and intended to be embedded through an iframe.
+
+Characteristics:
+
+- one review card at a time
+- 5-second auto-rotation
+- dot indicators
+- isolated CSS and JS
+- no styling conflicts with host sites
+
+This is the intended embed shape:
+
+```html
+<iframe
+  src="https://your-backend.example.com/widget/BRAND_PAGE_ID"
+  width="100%"
+  height="320"
+  style="border:0;border-radius:18px;overflow:hidden;background:transparent;"
+  loading="lazy"
+  referrerpolicy="no-referrer-when-downgrade"
+></iframe>
+```
+
+## Telegram Usage
+
+You can connect Telegram to the OpenClaw runtime and trigger audits conversationally through the bot.
+
+Typical flow:
+
+- send a request to audit a business
+- backend starts the pipeline
+- operator reviews results in Streamlit
+- approved items are pushed to their final destinations
+
+## Troubleshooting
+
+### Streamlit shows no brands or pulse items
+
+Check:
+
+- `NOTION_TOKEN`
+- `NOTION_BRAND_DB_ID`
+- `NOTION_PULSE_DB_ID`
+- Notion integration permissions on both databases
+
+### Widget is blank
+
+Check:
+
+- the selected brand has at least one `Praise` item with status `Live`
+- `RAILWAY_PUBLIC_URL` points to the correct backend
+
+### Trello dispatch fails
+
+Check:
+
+- `TRELLO_KEY`
+- `TRELLO_TOKEN`
+- `TRELLO_LIST_ID`
+- that the target list exists and the token has access
+
+### Railway deploy works but state disappears
+
+Check:
+
+- persistent volume is mounted at `/data`
+- `entrypoint.sh` is syncing workspace into `/data/workspace`
+
+## Notes
+
+- This repo started from the Railway OpenClaw template but has been adapted heavily for the Brand Pulse use case.
+- `submission.md` contains the challenge-facing writeup.
+- `README.md` is intentionally developer-oriented.
