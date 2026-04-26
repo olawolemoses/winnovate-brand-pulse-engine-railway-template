@@ -475,8 +475,8 @@ with tab_pending:
             """
             <div class="ops-callout">
               <div class="ops-kicker">Ops Board</div>
-              <div class="ops-title">Friction items flow into Trello</div>
-              <p class="ops-copy">This is the operating queue for customer issues that need follow-up. Once you approve a friction alert, Pulse turns it into a Trello task so the team can assign it, track progress, and close the loop on the underlying customer complaint.</p>
+              <div class="ops-title">Approved items split into action and visibility</div>
+              <p class="ops-copy">• <strong>Friction</strong> goes to Trello for assignment and follow-up.<br />• <strong>Praise</strong> goes live in the marketing widget as social proof.</p>
             </div>
             """,
             unsafe_allow_html=True,
