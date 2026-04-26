@@ -302,6 +302,15 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function truncateText(value, maxLength) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (text.length <= maxLength) return text;
+  const sliced = text.slice(0, maxLength);
+  const lastSpace = sliced.lastIndexOf(" ");
+  return `${(lastSpace > 20 ? sliced.slice(0, lastSpace) : sliced).trim()}…`;
+}
+
 function shellEscape(value) {
   return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
 }
@@ -431,16 +440,17 @@ async function fetchLivePraiseItems(brandId) {
     const props = page.properties || {};
     const content = notionTitle(props, "Content") || notionText(props, "Content");
     const reviewText = notionText(props, "Original Review", "Review Text");
+    const baseText = reviewText || content;
     return {
       page_id: page.id,
       content,
       author: notionText(props, "Author"),
       rating: notionNumber(props, "Review Rating", "Rating") ?? 5,
       review_text: reviewText,
-      display_text: reviewText || content,
-      subtext: reviewText && content && reviewText !== content ? content : "",
+      display_title: truncateText(content || baseText, 88),
+      display_excerpt: truncateText(baseText, 148),
     };
-  }).filter((item) => item.display_text);
+  }).filter((item) => item.display_title || item.display_excerpt);
 }
 
 function renderWidgetDocument(brandId, items) {
@@ -497,7 +507,7 @@ function renderWidgetDocument(brandId, items) {
         border-radius: 24px;
         padding: 24px;
         box-shadow: var(--shadow);
-        min-height: 240px;
+        min-height: 268px;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
@@ -525,6 +535,11 @@ function renderWidgetDocument(brandId, items) {
         line-height: 1.34;
         font-weight: 700;
         margin: 0 0 18px;
+        min-height: calc(1.34em * 3);
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
       }
       .meta {
         display: flex;
@@ -538,9 +553,15 @@ function renderWidgetDocument(brandId, items) {
         font-weight: 600;
       }
       .context {
-        font-size: 13px;
+        font-size: 14px;
         color: var(--muted);
         margin-top: 4px;
+        line-height: 1.45;
+        min-height: calc(1.45em * 2);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
       }
       .stars {
         color: var(--gold);
@@ -636,10 +657,10 @@ function renderWidgetDocument(brandId, items) {
         const item = items[index];
         card.classList.remove("visible");
         window.setTimeout(() => {
-          quote.textContent = item.display_text || item.content;
+          quote.textContent = item.display_title || item.content;
           author.textContent = item.author || "Verified customer";
-          context.textContent = item.subtext || "";
-          context.style.display = item.subtext ? "block" : "none";
+          context.textContent = item.display_excerpt || "";
+          context.style.display = item.display_excerpt ? "-webkit-box" : "none";
           stars.textContent = starString(item.rating);
           renderDots();
           card.classList.add("visible");
