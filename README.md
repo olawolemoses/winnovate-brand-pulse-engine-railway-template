@@ -63,6 +63,26 @@ Core runtime pieces:
 - `Railway Persistent Volume`
   Preserves `/data` so state survives redeploys.
 
+## System Architecture
+
+Brand Pulse is a closed-loop brand operations system that runs from the first user trigger to the final business action.
+
+![System Architecture](https://dev-to-uploads.s3.amazonaws.com/uploads/articles/jgbxkz14gx1p5vr6gjha.png)
+
+1. A founder or operator starts the flow from Telegram or the Streamlit HITL dashboard by selecting a business and launching a new audit.
+2. The Railway-hosted Express control layer receives the request, runs the audit asynchronously, tracks progress in SQLite, and keeps the UI updated in real time.
+3. The backend fetches recent Google reviews via Google Places and categorizes them into `Praise` or `Friction`.
+4. The system upserts the brand and syncs review-derived items to Notion, which serves as the long-term system of record while SQLite handles live execution state.
+5. A continuous cron service sweeps the Brand Registry every 24 hours so the engine can operate proactively, not just on demand.
+6. After approval, `Praise` is promoted to `Live` and shown in the embeddable iframe widget, while `Friction` is dispatched to Trello as operational follow-up.
+
+Supporting views from the submission:
+
+- Notion connection setup: ![Notion Connection Setup](https://github.com/olawolemoses/winnovate-brand-pulse-engine-railway-template/blob/main/assets/Edit%20connection.png?raw=true)
+- Brand Registry: ![Brand Registry](https://github.com/olawolemoses/winnovate-brand-pulse-engine-railway-template/blob/main/assets/BrandRegistry.png?raw=true)
+- Brand Pulse database: ![Brand Pulse Database](https://github.com/olawolemoses/winnovate-brand-pulse-engine-railway-template/blob/main/assets/BrandPulse.png?raw=true)
+- Marketing widget output: ![Marketing Widget](https://github.com/olawolemoses/winnovate-brand-pulse-engine-railway-template/blob/main/assets/marketing-widget.png?raw=true)
+
 ## Repository Layout
 
 ```text
@@ -327,6 +347,45 @@ Request:
 - Friction:
   - becomes `Sent to Trello`
   - gets a Trello card via `action_dispatcher.js`
+
+## Agentic AI Skills
+
+The OpenClaw workspace is organized around a small set of focused Brand Pulse skills:
+
+- `fetch_brand_pulse`
+  Pulls real-time reviews from Google Places API.
+- `brand_pulse_categorizer`
+  Uses LLMs to classify feedback into `Friction` for operations or `Praise` for marketing.
+- `sync_to_notion`
+  Persists categorized output into Notion by upserting the brand and staging review-derived items in the Pulse Actions database.
+- `execute_actions`
+  Finalizes approved items by pushing `Friction` into Trello and promoting `Praise` into live marketing assets.
+- `brand_pulse`
+  Acts as the orchestration layer that stitches the workflow together end-to-end, from review collection to categorization, persistence, and reporting.
+
+These live in `workspace/skills/*.md` and work alongside the execution tools in `workspace/tools/`.
+
+## Demo
+
+Brand Pulse in action:
+
+- YouTube demo: https://youtu.be/JKA6UFS-ngY
+- Live Streamlit demo: https://brand-pulse-console.streamlit.app/
+- Trello demo board: https://trello.com/b/ldQuJBhF/brand-pulse-demo-board
+
+What the demo shows:
+
+- end-to-end automation from customer review to approved business action
+- real-time AI categorization of actionable `Praise` and `Friction`
+- human-in-the-loop review before downstream execution
+- immediate dispatch into real business tools and outputs
+
+Demo screenshots from the submission:
+
+- Streamlit home: ![Streamlit Home](https://github.com/olawolemoses/winnovate-brand-pulse-engine-railway-template/blob/main/assets/streamlit-home.png?raw=true)
+- Pending review tab: ![Streamlit Pending Review](https://github.com/olawolemoses/winnovate-brand-pulse-engine-railway-template/blob/main/assets/streamlit-pending-preview-tab.png?raw=true)
+- Approved / live tab: ![Streamlit Live Tab](https://github.com/olawolemoses/winnovate-brand-pulse-engine-railway-template/blob/main/assets/streamlit-live-preview-tab.png?raw=true)
+- Trello board preview: ![Trello Board Preview](https://github.com/olawolemoses/winnovate-brand-pulse-engine-railway-template/blob/main/assets/trello-board-preview.png?raw=true)
 
 ## Notion Model
 
